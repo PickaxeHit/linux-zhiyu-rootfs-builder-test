@@ -1,8 +1,5 @@
 name: Build Rootfs (NixOS)
 on:
-  push:
-    branches: [master]
-    paths: [flake.nix, flake.lock, 'nixos/**', 'scripts/*nixos*', 'scripts/update-bsp.sh', '.github/workflows/nixos-builder.yml']
   workflow_dispatch:
     inputs:
       desktop:
@@ -10,11 +7,6 @@ on:
         type: choice
         options: [minimal, kde, gnome, plasmamobile]
         default: minimal
-      rootfs_mode:
-        description: Root filesystem location (Android userdata or microSD rescue)
-        type: choice
-        options: [userdata, sd]
-        default: userdata
       username:
         description: Initial username
         type: string
@@ -41,7 +33,6 @@ jobs:
     timeout-minutes: 180
     env:
       DESKTOP: ${{ inputs.desktop || 'minimal' }}
-      ROOTFS_MODE: ${{ inputs.rootfs_mode || 'userdata' }}
       BSP_REVISION: ${{ inputs.bsp_revision }}
       ROOTFS_USERNAME: ${{ inputs.username }}
       ROOTFS_HOSTNAME: ${{ inputs.hostname }}
@@ -59,20 +50,17 @@ jobs:
           python3 scripts/validate_nixos_lock.py "$BSP_REVISION"
           nix fmt -- --check flake.nix nixos/*.nix
           nix flake check --no-build --no-update-lock-file --no-write-lock-file
-          userdata=$(nix eval --raw .#nixosConfigurations."$DESKTOP"-userdata.config.system.build.zhiyuImages.drvPath)
-          rescue=$(nix eval --raw .#nixosConfigurations."$DESKTOP"-sd.config.system.build.zhiyuImages.drvPath)
-          if [[ "$userdata" != "$rescue" ]]; then
-            echo 'The microSD rescue root must use the same images as userdata' >&2
-            exit 1
-          fi
+          nix eval --json .#nixosConfigurations."$DESKTOP".config \
+            --apply 'cfg: cfg.fileSystems ? "/" || builtins.any (mount: mount.where == "/") cfg.systemd.mounts' |
+            jq -e '. == false'
           for script in scripts/build-{alarm,debian,fedora}-rootfs.sh; do bash -n "$script"; done
       - name: Build and verify the rootfs and matching boot images
         env:
           PASSWORD: ${{ secrets.ROOTFS_PASSWORD || inputs.password || 'changeme' }}
-        run: scripts/build-nixos.sh "$DESKTOP" "$ROOTFS_MODE" "$RUNNER_TEMP/deploy" "$BSP_REVISION"
+        run: scripts/build-nixos.sh "$DESKTOP" "$RUNNER_TEMP/deploy" "$BSP_REVISION"
       - name: Name the verified deployment
         id: names
-        run: echo "artifact=nixos-zhiyu-$DESKTOP-$ROOTFS_MODE-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+        run: echo "artifact=nixos-zhiyu-$DESKTOP-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ${{ steps.names.outputs.artifact }}

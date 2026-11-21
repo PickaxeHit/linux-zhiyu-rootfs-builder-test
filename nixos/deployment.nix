@@ -2,7 +2,6 @@
   config,
   desktop,
   pkgs,
-  rootfsMode,
   self,
   nixpkgs,
   zhiyu,
@@ -14,7 +13,7 @@ let
   system = config.system.build.toplevel;
   imageSet = config.system.build.zhiyuImages;
   kernel = config.boot.kernelPackages.kernel;
-  name = "nixos-zhiyu-${desktop}-${rootfsMode}-rootfs";
+  name = "nixos-zhiyu-${desktop}-rootfs";
   source = self.outPath;
   site = builtins.fromJSON (builtins.readFile ./site.json);
   tarball = pkgs.callPackage (nixpkgs + "/nixos/lib/make-system-tarball.nix") {
@@ -44,7 +43,7 @@ let
   };
   metadata = pkgs.writeText "zhiyu-deployment-metadata.json" (
     builtins.toJSON {
-      inherit desktop rootfsMode;
+      inherit desktop;
       inherit (site) username hostname;
       systemPath = system.outPath;
       systemDerivation = builtins.unsafeDiscardStringContext system.drvPath;
@@ -56,7 +55,7 @@ let
   );
 in
 {
-  system.build.deployment = pkgs.runCommand "zhiyu-${desktop}-${rootfsMode}-deployment" { } ''
+  system.build.deployment = pkgs.runCommand "zhiyu-${desktop}-deployment" { } ''
     mkdir "$out"
     ln -s ${tarball}/tarball/${name}.tar "$out/${name}.tar"
     ln -s ${system} "$out/system"

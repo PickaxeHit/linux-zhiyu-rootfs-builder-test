@@ -8,27 +8,27 @@ one Actions run.
 
 ## Build a NixOS deployment
 
-Use **Build Rootfs (NixOS)** in Actions to select a desktop, root filesystem
-location, initial username, hostname and password.
+Use **Build Rootfs (NixOS)** in Actions to select a desktop,
+initial username, hostname and password.
 
 On an ARM64 Nix machine with flakes enabled, run:
 
 ```sh
 ROOTFS_USERNAME=alice ROOTFS_HOSTNAME=zhiyu-tablet \
-  scripts/build-nixos.sh minimal userdata "$PWD/deploy"
+  scripts/build-nixos.sh minimal "$PWD/deploy"
 (cd deploy && sha256sum --check --strict SHA256SUMS)
 ```
 
 Desktop choices are `minimal`, `kde`, `gnome` and `plasmamobile`.
-Storage modes are `userdata` for `/data/linux` and `sd` for an ext4
-rescue root on `/dev/mmcblk0p1`. Both builds use userdata-first boot images.
+Use the same rootfs archive for Android userdata (`/data/linux`) or an
+ext4 microSD rescue root. The initramfs mounts the root with the appropriate
+options before starting NixOS. Stage 2 inherits the existing mount.
 If Android userdata cannot be unlocked or cannot provide a bootable system,
 the initramfs tries the microSD. On the rescue card it first looks for
 `/sbin/init`, then tries the current or another executable NixOS generation
 without requiring a Boot ID match. Rescue userspace runs with the kernel
-already loaded by the device. These choices are also available through the
-Actions manual dispatch. An optional expected BSP revision checks the committed lock without
-changing it. All rootfs workflows upload their results as Actions artifacts. The initial username is
+already loaded by the device. An optional expected BSP revision checks the
+committed lock without changing it. All rootfs workflows upload their results as Actions artifacts. The initial username is
 `username`, and the initial password is `changeme` unless a different workflow input
 or the `ROOTFS_PASSWORD` repository secret is set. The secret takes precedence.
 NixOS defaults to hostname `nixos`. Its password hash is added to the rootfs during
@@ -36,7 +36,7 @@ packaging and is kept out of the Nix store and the manifest.
 
 ## Deploy a matched set
 
-1. Check `SHA256SUMS` and confirm the storage mode in `manifest.json`. Preserve
+1. Check `SHA256SUMS` and confirm the build details in `manifest.json`. Preserve
    numeric ownership and permissions when extracting the tarball as a privileged
    user into the empty target directory or mounted microSD root. The target must
    support Unix permissions and symlinks.
@@ -53,7 +53,7 @@ packaging and is kept out of the Nix store and the manifest.
    card and keep the installed boot images.
 4. The first boot imports the tarball's Nix store registration records. The
    included `/etc/nixos` contains the pinned configuration. For upgrades, use
-   `sudo nixos-rebuild boot --flake /etc/nixos#minimal-userdata` with the variant
+   `sudo nixos-rebuild boot --flake /etc/nixos#minimal` with the variant
    you deployed, then use the BSP's `zhiyu-install --expect-slot a|b GENERATION`
    with the resulting generation path (choose your actual slot). It supports
    `--dry-run`. Keep a known-good generation available for recovery.

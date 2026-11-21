@@ -162,7 +162,7 @@ def unpack_images(deployment, images, scratch, root, system):
     return hashes, kernel_id, vendor_id, cmdline, bootconfig
 
 
-def test_boot(deployment, root, system, cmdline, bootconfig, hashes, rootfs_mode):
+def test_boot(deployment, root, system, cmdline, bootconfig, hashes):
     (root / "proc/device-tree").mkdir()
     (root / "proc/device-tree/lenovo,mainline-compatible").write_bytes(b"lenovo,zhiyu\0")
     cmd = root / "proc/cmdline"
@@ -190,13 +190,12 @@ def test_boot(deployment, root, system, cmdline, bootconfig, hashes, rootfs_mode
         with (parts / f"{part}_a").open("rb") as file:
             require(file.read(4096) == bytes(4096), "inactive slot was touched")
     require(output(*select) == f"{system}/init", "flashed generation cannot be selected")
-    if rootfs_mode == "sd":
-        cmd.write_text(re.sub(r"zhiyu\.kernel_id=[0-9a-f]{64}", "zhiyu.kernel_id=" + "0" * 64,
-                              cmd.read_text()))
-        result = subprocess.run(select, capture_output=True, text=True)
-        require(result.returncode != 0, "strict selection accepted unrelated boot images")
-        require(output(deployment / "boot-selector", "--sd-rescue", root) == f"{system}/init",
-                "microSD rescue rejected an executable generation with different Boot IDs")
+    cmd.write_text(re.sub(r"zhiyu\.kernel_id=[0-9a-f]{64}", "zhiyu.kernel_id=" + "0" * 64,
+                          cmd.read_text()))
+    result = subprocess.run(select, capture_output=True, text=True)
+    require(result.returncode != 0, "strict selection accepted unrelated boot images")
+    require(output(deployment / "boot-selector", "--sd-rescue", root) == f"{system}/init",
+            "microSD rescue rejected an executable generation with different Boot IDs")
 
 
 def verify(deployment, destination):
@@ -219,6 +218,10 @@ def verify(deployment, destination):
         require(os.access(init, os.X_OK), "stage 2 init is not executable")
         require("/build/" not in init.read_text(), "stage 2 references a temporary build directory")
         require(rooted(root, "/etc/nixos/flake.lock").read_bytes() == lock.read_bytes(), "deployed lock differs")
+        fstab = rooted(root, f"{system}/etc/fstab").read_text()
+        require(not any(line.split()[1:2] == ["/"] for line in fstab.splitlines()
+                        if line.strip() and not line.lstrip().startswith("#")),
+                "stage 2 fstab would override the initramfs root")
         deployed_site = json.loads(rooted(root, "/etc/nixos/nixos/site.json").read_text())
         require(all(deployed_site[key] == metadata[key] for key in ("username", "hostname")),
                 "deployed account settings differ")
@@ -235,7 +238,7 @@ def verify(deployment, destination):
         require(set(p.name for p in moddir.parent.iterdir()) == {metadata["modDirVersion"]}, "unexpected module versions")
         count = verify_store(root, system, root / "nix-path-registration")
         hashes, kid, vid, cmdline, bootconfig = unpack_images(deployment, images, scratch, root, system)
-        test_boot(deployment, root, system, cmdline, bootconfig, hashes, metadata["rootfsMode"])
+        test_boot(deployment, root, system, cmdline, bootconfig, hashes)
 
         destination.mkdir(parents=True)
         published_archive = destination / (archive.name + ".xz")

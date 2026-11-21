@@ -20,6 +20,8 @@ in
     }
   ];
   zhiyu.enable = true;
+  # The BSP initramfs mounts the writable root and passes it to stage 2.
+  # Leave / out of fstab so systemd keeps that mount and its existing options.
   networking.hostName = site.hostname;
   networking.networkmanager.enable = true;
   system.stateVersion = "26.05";

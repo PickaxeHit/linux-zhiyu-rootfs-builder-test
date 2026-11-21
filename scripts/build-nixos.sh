@@ -2,11 +2,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 desktop=${1:-minimal}
-mode=${2:-userdata}
-output=${3:-deploy}
-expected_bsp=${4:-}
+output=${2:-deploy}
+expected_bsp=${3:-}
 case "$desktop" in minimal|kde|gnome|plasmamobile) ;; *) exit 2 ;; esac
-case "$mode" in userdata|sd) ;; *) exit 2 ;; esac
 test ! -e "$output"
 python3 scripts/validate_nixos_lock.py "$expected_bsp"
 flake=.
@@ -34,6 +32,6 @@ PY_CONFIG
   flake="path:$source"
 fi
 deployment=$(env -u PASSWORD nix build --no-link --no-update-lock-file --print-out-paths -L \
-  "$flake#packages.aarch64-linux.$desktop-$mode")
+  "$flake#packages.aarch64-linux.$desktop")
 python3 scripts/verify-nixos-deployment.py "$deployment" "$output"
 (cd "$output" && sha256sum --check --strict SHA256SUMS)

@@ -19,12 +19,8 @@
         "gnome"
         "plasmamobile"
       ];
-      modes = [
-        "userdata"
-        "sd"
-      ];
       makeSystem =
-        desktop: rootfsMode:
+        desktop:
         nixpkgs.lib.nixosSystem {
           inherit system;
           specialArgs = {
@@ -33,7 +29,6 @@
               nixpkgs
               zhiyu
               desktop
-              rootfsMode
               ;
             bsp = zhiyu.packages.${system};
             bspChecks = zhiyu.checks.${system};
@@ -41,21 +36,15 @@
           modules = [
             zhiyu.nixosModules.default
             ./nixos/base.nix
-            ./nixos/storage.nix
             ./nixos/desktop.nix
             ./nixos/deployment.nix
           ];
         };
-      names = lib.concatMap (desktop: map (mode: "${desktop}-${mode}") modes) desktops;
-      systems = lib.listToAttrs (
-        lib.concatMap (
-          desktop: map (mode: lib.nameValuePair "${desktop}-${mode}" (makeSystem desktop mode)) modes
-        ) desktops
-      );
+      systems = lib.genAttrs desktops makeSystem;
     in
     {
       nixosConfigurations = systems;
-      packages.${system} = lib.genAttrs names (name: systems.${name}.config.system.build.deployment);
+      packages.${system} = lib.mapAttrs (_: host: host.config.system.build.deployment) systems;
       formatter = lib.genAttrs [ "x86_64-linux" system ] (
         platform: nixpkgs.legacyPackages.${platform}.nixfmt
       );
