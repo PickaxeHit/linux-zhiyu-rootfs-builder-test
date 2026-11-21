@@ -35,6 +35,8 @@ jobs:
       artifact: ${{ steps.names.outputs.artifact }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
       - uses: cachix/install-nix-action@d698718aa798980d17dd749f03beae0b51183399
         with:
           extra_nix_config: |

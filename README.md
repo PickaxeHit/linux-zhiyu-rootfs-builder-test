@@ -31,8 +31,10 @@ changing it. Test releases are opt-in in the test repository.
    `etc/ssh/authorized_keys.d/operator` in the extracted root, owned by root and
    with permissions `0600`. SSH in as `operator` over a connected network.
    For desktop login, set a password interactively with `sudo passwd operator`.
-3. Install the four images from this deployment using the BSP device installation
-   procedure for your active slot. Flashing is explicit. The C boot selector
+3. For initial deployment, use an unlocked Android bootloader. In fastboot,
+   check the active slot with `fastboot getvar current-slot`. Install this set’s
+   `boot.img`, `vendor_boot.img`, `init_boot.img` and `vbmeta.img` to the matching
+   four partitions of the slot you have reserved for Linux. The C boot selector
    checks the kernel and vendor IDs against the generation before stage 2.
 4. The first boot imports the tarball's Nix store registration records. The
    included `/etc/nixos` contains the pinned configuration. For upgrades, use
