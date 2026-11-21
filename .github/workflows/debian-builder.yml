@@ -1,4 +1,4 @@
-name: Build Debian rootfs
+name: Build Rootfs (Debian)
 
 on:
   workflow_dispatch:
@@ -24,7 +24,7 @@ on:
         type: string
         default: changeme
       hostname:
-        description: Hostname
+        description: System hostname
         type: string
         default: debian
       package_repository:
@@ -38,6 +38,7 @@ on:
 
 jobs:
   build:
+    name: Build rootfs (ARM64)
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 120
     steps:
@@ -50,7 +51,7 @@ jobs:
 
       - uses: actions/checkout@v4
 
-      - name: Build and pack rootfs
+      - name: Build and package the rootfs
         env:
           RELEASE: ${{ inputs.release }}
           DESKTOP: ${{ inputs.desktop }}

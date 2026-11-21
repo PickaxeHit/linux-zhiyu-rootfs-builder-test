@@ -16,6 +16,7 @@ let
   kernel = config.boot.kernelPackages.kernel;
   name = "nixos-zhiyu-${desktop}-${rootfsMode}-rootfs";
   source = self.outPath;
+  site = builtins.fromJSON (builtins.readFile ./site.json);
   tarball = pkgs.callPackage (nixpkgs + "/nixos/lib/make-system-tarball.nix") {
     fileName = name;
     contents = [ ];
@@ -41,6 +42,7 @@ let
   metadata = pkgs.writeText "zhiyu-deployment-metadata.json" (
     builtins.toJSON {
       inherit desktop rootfsMode;
+      inherit (site) username hostname login;
       systemPath = system.outPath;
       systemDerivation = builtins.unsafeDiscardStringContext system.drvPath;
       kernelVersion = kernel.version;

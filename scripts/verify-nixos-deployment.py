@@ -193,6 +193,14 @@ def verify(deployment, destination):
         require(os.access(init, os.X_OK), "stage 2 init is not executable")
         require("/build/" not in init.read_text(), "stage 2 references a temporary build directory")
         require(rooted(root, "/etc/nixos/flake.lock").read_bytes() == lock.read_bytes(), "deployed lock differs")
+        deployed_site = json.loads(rooted(root, "/etc/nixos/nixos/site.json").read_text())
+        require(all(deployed_site[key] == metadata[key] for key in ("username", "hostname", "login")),
+                "deployed account settings differ")
+        defaults = json.loads(Path("nixos/site.json").read_text())
+        for key, default in defaults.items():
+            require(deployed_site[key] == (os.environ.get(f"ROOTFS_{key.upper()}") or default),
+                    f"incorrect deployed {key}")
+        require(not (root / "var/lib/zhiyu/initial-password.hash").exists(), "deployment contains a password hash")
         moddir = rooted(root, f"{system}/kernel-modules/lib/modules/{metadata['modDirVersion']}")
         require(any(moddir.rglob("*.ko*")), "kernel modules absent")
         require(set(p.name for p in moddir.parent.iterdir()) == {metadata["modDirVersion"]}, "unexpected module versions")

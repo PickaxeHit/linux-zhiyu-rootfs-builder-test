@@ -1,4 +1,4 @@
-name: NixOS deployment
+name: Build Rootfs (NixOS)
 on:
   push:
     branches: [master]
@@ -6,17 +6,33 @@ on:
   workflow_dispatch:
     inputs:
       desktop:
+        description: Desktop environment (minimal has no desktop)
         type: choice
         options: [minimal, kde, gnome, plasmamobile]
         default: minimal
       rootfs_mode:
+        description: Root filesystem location (Android userdata or microSD)
         type: choice
         options: [userdata, sd]
         default: userdata
+      username:
+        description: Initial username
+        type: string
+        default: operator
+      hostname:
+        description: System hostname
+        type: string
+        default: zhiyu
+      login:
+        description: Initial login method (SSH key or password provisioned at deployment)
+        type: choice
+        options: [ssh, password]
+        default: ssh
       bsp_revision:
         description: Expected BSP commit already pinned in flake.lock
         type: string
       publish_test_release:
+        description: Publish the verified rootfs and boot images as a test pre-release
         type: boolean
         default: false
 
@@ -25,12 +41,16 @@ permissions:
 
 jobs:
   build:
+    name: Build rootfs (ARM64)
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 180
     env:
       DESKTOP: ${{ inputs.desktop || 'minimal' }}
       ROOTFS_MODE: ${{ inputs.rootfs_mode || 'userdata' }}
       BSP_REVISION: ${{ inputs.bsp_revision }}
+      ROOTFS_USERNAME: ${{ inputs.username }}
+      ROOTFS_HOSTNAME: ${{ inputs.hostname }}
+      ROOTFS_LOGIN: ${{ inputs.login }}
     outputs:
       artifact: ${{ steps.names.outputs.artifact }}
     steps:
@@ -48,7 +68,7 @@ jobs:
           nix fmt -- --check flake.nix nixos/*.nix
           nix flake check --no-build --no-update-lock-file --no-write-lock-file
           for script in scripts/build-{alarm,debian,fedora}-rootfs.sh; do bash -n "$script"; done
-      - name: Build and verify the complete deployment
+      - name: Build and verify the rootfs and matching boot images
         run: scripts/build-nixos.sh "$DESKTOP" "$ROOTFS_MODE" "$RUNNER_TEMP/deploy" "$BSP_REVISION"
       - name: Name the verified deployment
         id: names
@@ -62,6 +82,7 @@ jobs:
           compression-level: 1
 
   publish-test-release:
+    name: Publish rootfs and boot images
     needs: build
     if: inputs.publish_test_release && github.repository == 'PickaxeHit/linux-zhiyu-rootfs-builder-test' && github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-24.04
@@ -81,7 +102,9 @@ jobs:
         run: |
           cd deploy
           sha256sum --check --strict SHA256SUMS
+          variant=$(jq -r '.desktop + ", " + .rootfsMode' manifest.json)
+          notes="Lenovo TB378FC NixOS rootfs and four matching boot images. Build commit: $GITHUB_SHA. See manifest.json for the configuration and verify both the rootfs and images against SHA256SUMS."
           gh release create "nixos-test-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" ./* \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_REF_NAME" --prerelease \
-            --title "Zhiyu NixOS test $GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT" \
-            --notes "Source: $GITHUB_SHA. See manifest.json and SHA256SUMS for exact build provenance."
+            --title "Zhiyu NixOS rootfs ($variant)" \
+            --notes "$notes"

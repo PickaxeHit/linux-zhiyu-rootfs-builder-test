@@ -4,9 +4,31 @@
   pkgs,
   ...
 }:
+let
+  site = builtins.fromJSON (builtins.readFile ./site.json);
+  localPassword = site.login == "password";
+in
 {
+  assertions = [
+    {
+      assertion =
+        builtins.match "[a-z_][a-z0-9_-]{0,31}" site.username != null && site.username != "root";
+      message = "The initial user must have a valid non-root Linux username.";
+    }
+    {
+      assertion = builtins.match "[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?" site.hostname != null;
+      message = "The hostname must be a single valid DNS label.";
+    }
+    {
+      assertion = builtins.elem site.login [
+        "ssh"
+        "password"
+      ];
+      message = "The login method must be ssh or password.";
+    }
+  ];
   zhiyu.enable = true;
-  networking.hostName = "zhiyu";
+  networking.hostName = site.hostname;
   networking.networkmanager.enable = true;
   system.stateVersion = "26.05";
 
@@ -18,17 +40,20 @@
 
   # Enrol the operator by copying a public key to the target before boot.
   # Passwords can be configured after authenticated login.
-  users.users.root.hashedPassword = "!";
-  users.users.operator = {
-    isNormalUser = true;
-    extraGroups = [
-      "wheel"
-      "networkmanager"
-      "video"
-    ];
-    hashedPassword = "!";
+  users.users = {
+    root.hashedPassword = "!";
+    ${site.username} = {
+      isNormalUser = true;
+      extraGroups = [
+        "wheel"
+        "networkmanager"
+        "video"
+      ];
+      initialHashedPassword = "!";
+      hashedPasswordFile = lib.mkIf localPassword "/var/lib/zhiyu/initial-password.hash";
+    };
   };
-  security.sudo.wheelNeedsPassword = false;
+  security.sudo.wheelNeedsPassword = localPassword;
   services.openssh = {
     enable = true;
     authorizedKeysFiles = [ "/etc/ssh/authorized_keys.d/%u" ];

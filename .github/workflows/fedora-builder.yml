@@ -1,4 +1,4 @@
-name: Build Fedora rootfs
+name: Build Rootfs (Fedora)
 
 on:
   workflow_dispatch:
@@ -18,11 +18,11 @@ on:
         type: string
         default: user
       password:
-        description: Initial password (overridden by ROOTFS_PASSWORD)
+        description: Initial password (overridden by repo secret ROOTFS_PASSWORD if set)
         type: string
         default: changeme
       hostname:
-        description: Hostname
+        description: System hostname
         type: string
         default: fedora
       package_repository:
@@ -35,11 +35,12 @@ permissions:
 
 jobs:
   build:
+    name: Build rootfs (ARM64)
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
-      - name: Build and pack Fedora rootfs
+      - name: Build and package the rootfs
         env:
           RELEASE: ${{ inputs.release }}
           DESKTOP: ${{ inputs.desktop }}
