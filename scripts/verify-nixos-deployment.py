@@ -103,7 +103,7 @@ def verify_store(root, system, registration):
     return len(actual)
 
 
-def unpack_images(deployment, images, scratch, root, system, metadata):
+def unpack_images(deployment, images, scratch, root, system):
     tool = deployment / "android-tools/bin"
     os.environ["PATH"] = f"{tool}:{os.environ['PATH']}"
     key = deployment / "avb-test-key.pem"
@@ -205,7 +205,7 @@ def verify(deployment, destination):
         require(any(moddir.rglob("*.ko*")), "kernel modules absent")
         require(set(p.name for p in moddir.parent.iterdir()) == {metadata["modDirVersion"]}, "unexpected module versions")
         count = verify_store(root, system, root / "nix-path-registration")
-        hashes, kid, vid, cmdline, bootconfig = unpack_images(deployment, images, scratch, root, system, metadata)
+        hashes, kid, vid, cmdline, bootconfig = unpack_images(deployment, images, scratch, root, system)
         test_boot(deployment, root, system, cmdline, bootconfig, hashes)
 
     destination.mkdir(parents=True)
