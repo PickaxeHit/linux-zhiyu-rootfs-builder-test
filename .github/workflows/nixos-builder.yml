@@ -1,0 +1,85 @@
+name: NixOS deployment
+on:
+  push:
+    branches: [master]
+    paths: [flake.nix, flake.lock, 'nixos/**', 'scripts/*nixos*', 'scripts/update-bsp.sh', '.github/workflows/nixos-builder.yml']
+  workflow_dispatch:
+    inputs:
+      desktop:
+        type: choice
+        options: [minimal, kde, gnome, plasmamobile]
+        default: minimal
+      rootfs_mode:
+        type: choice
+        options: [userdata, sd]
+        default: userdata
+      bsp_revision:
+        description: Expected BSP commit already pinned in flake.lock
+        type: string
+      publish_test_release:
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 180
+    env:
+      DESKTOP: ${{ inputs.desktop || 'minimal' }}
+      ROOTFS_MODE: ${{ inputs.rootfs_mode || 'userdata' }}
+      BSP_REVISION: ${{ inputs.bsp_revision }}
+    outputs:
+      artifact: ${{ steps.names.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: cachix/install-nix-action@d698718aa798980d17dd749f03beae0b51183399
+        with:
+          extra_nix_config: |
+            extra-substituters = ${{ vars.ZHIYU_BSP_CACHE_PUBLIC_KEY != '' && 'https://raw.githubusercontent.com/PickaxeHit/linux-zhiyu-nix/nix-repodata' || '' }}
+            extra-trusted-public-keys = ${{ vars.ZHIYU_BSP_CACHE_PUBLIC_KEY }}
+      - name: Validate lock and configurations
+        run: |
+          python3 scripts/validate_nixos_lock.py "$BSP_REVISION"
+          nix fmt -- --check flake.nix nixos/*.nix
+          nix flake check --no-build --no-update-lock-file --no-write-lock-file
+          for script in scripts/build-{alarm,debian,fedora}-rootfs.sh; do bash -n "$script"; done
+      - name: Build and verify the complete deployment
+        run: scripts/build-nixos.sh "$DESKTOP" "$ROOTFS_MODE" "$RUNNER_TEMP/deploy" "$BSP_REVISION"
+      - name: Name the verified deployment
+        id: names
+        run: echo "artifact=nixos-zhiyu-$DESKTOP-$ROOTFS_MODE-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ steps.names.outputs.artifact }}
+          path: ${{ runner.temp }}/deploy/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 1
+
+  publish-test-release:
+    needs: build
+    if: inputs.publish_test_release && github.repository == 'PickaxeHit/linux-zhiyu-rootfs-builder-test' && github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    concurrency:
+      group: nixos-test-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: deploy
+      - name: Verify and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd deploy
+          sha256sum --check --strict SHA256SUMS
+          gh release create "nixos-test-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" ./* \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_REF_NAME" --prerelease \
+            --title "Zhiyu NixOS test $GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT" \
+            --notes "Source: $GITHUB_SHA. See manifest.json and SHA256SUMS for exact build provenance."
