@@ -144,7 +144,7 @@ def unpack_images(deployment, images, scratch, root, system):
     return hashes, kernel_id, vendor_id, cmdline, bootconfig
 
 
-def test_boot(deployment, root, system, cmdline, bootconfig, hashes):
+def test_boot(deployment, root, system, cmdline, bootconfig, hashes, rootfs_mode):
     (root / "proc/device-tree").mkdir()
     (root / "proc/device-tree/lenovo,mainline-compatible").write_bytes(b"lenovo,zhiyu\0")
     cmd = root / "proc/cmdline"
@@ -172,6 +172,13 @@ def test_boot(deployment, root, system, cmdline, bootconfig, hashes):
         with (parts / f"{part}_a").open("rb") as file:
             require(file.read(4096) == bytes(4096), "inactive slot was touched")
     require(output(*select) == f"{system}/init", "flashed generation cannot be selected")
+    if rootfs_mode == "sd":
+        cmd.write_text(re.sub(r"zhiyu\.kernel_id=[0-9a-f]{64}", "zhiyu.kernel_id=" + "0" * 64,
+                              cmd.read_text()))
+        result = subprocess.run(select, capture_output=True, text=True)
+        require(result.returncode != 0, "strict selection accepted unrelated boot images")
+        require(output(deployment / "boot-selector", "--sd-rescue", root) == f"{system}/init",
+                "microSD rescue rejected an executable generation with different Boot IDs")
 
 
 def verify(deployment, destination):
@@ -206,7 +213,7 @@ def verify(deployment, destination):
         require(set(p.name for p in moddir.parent.iterdir()) == {metadata["modDirVersion"]}, "unexpected module versions")
         count = verify_store(root, system, root / "nix-path-registration")
         hashes, kid, vid, cmdline, bootconfig = unpack_images(deployment, images, scratch, root, system)
-        test_boot(deployment, root, system, cmdline, bootconfig, hashes)
+        test_boot(deployment, root, system, cmdline, bootconfig, hashes, metadata["rootfsMode"])
 
     destination.mkdir(parents=True)
     shutil.copyfile(archive, destination / archive.name)

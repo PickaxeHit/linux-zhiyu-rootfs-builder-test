@@ -21,12 +21,13 @@ ROOTFS_USERNAME=alice ROOTFS_HOSTNAME=zhiyu-tablet ROOTFS_LOGIN=ssh \
 
 Desktop choices are `minimal`, `kde`, `gnome` and `plasmamobile`.
 Storage modes are `userdata` for `/data/linux` and `sd` for an ext4
-rescue root on `/dev/mmcblk0p1`. Both builds use the same userdata-first boot
-images. The initramfs tries the microSD if Android userdata cannot be
-unlocked or cannot provide a bootable system. The card must have a NixOS
-generation matching the running images' Boot IDs. Update the rescue root
-alongside any change to the flashed images. These choices are also available
-through the Actions manual dispatch. An optional expected BSP revision checks the committed lock without
+rescue root on `/dev/mmcblk0p1`. Both builds use userdata-first boot images.
+If Android userdata cannot be unlocked or cannot provide a bootable system,
+the initramfs tries the microSD. On the rescue card it first looks for
+`/sbin/init`, then tries the current or another executable NixOS generation
+without requiring a Boot ID match. Rescue userspace runs with the kernel
+already loaded by the device. These choices are also available through the
+Actions manual dispatch. An optional expected BSP revision checks the committed lock without
 changing it. Test releases are opt-in in the test repository. The manifest records the selected account settings. Passwords and hashes are provisioned on the extracted rootfs.
 
 ## Deploy a matched set
@@ -53,10 +54,9 @@ changing it. Test releases are opt-in in the test repository. The manifest recor
    check the active slot with `fastboot getvar current-slot`. Install this set’s
    `boot.img`, `vendor_boot.img`, `init_boot.img` and `vbmeta.img` to the matching
    four partitions of the slot you have reserved for Linux. The C boot selector
-   checks the kernel and vendor IDs against the generation before stage 2.
-   When adding a microSD rescue root to an existing installation, compare its
-   Boot IDs with the main deployment's manifest and keep the shared images
-   installed.
+   checks both Boot IDs on Android userdata before stage 2. When adding a
+   microSD rescue root to an existing installation, extract the rootfs to the
+   card and keep the installed boot images.
 4. The first boot imports the tarball's Nix store registration records. The
    included `/etc/nixos` contains the pinned configuration. For upgrades, use
    `sudo nixos-rebuild boot --flake /etc/nixos#minimal-userdata` with the variant

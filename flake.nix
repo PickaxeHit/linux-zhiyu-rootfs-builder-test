@@ -1,7 +1,7 @@
 {
   description = "Bootable Zhiyu NixOS root filesystem and matching Android boot images";
 
-  inputs.zhiyu.url = "github:PickaxeHit/linux-zhiyu-nix/d575a4a8de26b246b166c1dabcbdd3e27ab903f1";
+  inputs.zhiyu.url = "github:PickaxeHit/linux-zhiyu-nix/35301a3026335168793040bc82b995e59de70726";
   inputs.nixpkgs.follows = "zhiyu/nixpkgs";
 
   outputs =

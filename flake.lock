@@ -30,17 +30,17 @@
         "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "lastModified": 1795229131,
-        "narHash": "sha256-5Ebnbynqz7r3sTtyCd0g+f+DhoMBae3PUBb9ejkqteg=",
+        "lastModified": 1795259477,
+        "narHash": "sha256-csHXp1sndq6cdBptx0zM3R2n/tIP+PYan+fCYLmF05E=",
         "owner": "PickaxeHit",
         "repo": "linux-zhiyu-nix",
-        "rev": "d575a4a8de26b246b166c1dabcbdd3e27ab903f1",
+        "rev": "35301a3026335168793040bc82b995e59de70726",
         "type": "github"
       },
       "original": {
         "owner": "PickaxeHit",
         "repo": "linux-zhiyu-nix",
-        "rev": "d575a4a8de26b246b166c1dabcbdd3e27ab903f1",
+        "rev": "35301a3026335168793040bc82b995e59de70726",
         "type": "github"
       }
     }
