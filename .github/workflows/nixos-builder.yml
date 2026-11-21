@@ -18,23 +18,18 @@ on:
       username:
         description: Initial username
         type: string
-        default: operator
+        default: username
+      password:
+        description: Initial password (overridden by repo secret ROOTFS_PASSWORD if set)
+        type: string
+        default: changeme
       hostname:
         description: System hostname
         type: string
-        default: zhiyu
-      login:
-        description: Initial login method (SSH key or password provisioned at deployment)
-        type: choice
-        options: [ssh, password]
-        default: ssh
+        default: nixos
       bsp_revision:
         description: Expected BSP commit already pinned in flake.lock
         type: string
-      publish_test_release:
-        description: Publish the verified rootfs and boot images as a test pre-release
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -50,9 +45,6 @@ jobs:
       BSP_REVISION: ${{ inputs.bsp_revision }}
       ROOTFS_USERNAME: ${{ inputs.username }}
       ROOTFS_HOSTNAME: ${{ inputs.hostname }}
-      ROOTFS_LOGIN: ${{ inputs.login }}
-    outputs:
-      artifact: ${{ steps.names.outputs.artifact }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -75,6 +67,8 @@ jobs:
           fi
           for script in scripts/build-{alarm,debian,fedora}-rootfs.sh; do bash -n "$script"; done
       - name: Build and verify the rootfs and matching boot images
+        env:
+          PASSWORD: ${{ secrets.ROOTFS_PASSWORD || inputs.password || 'changeme' }}
         run: scripts/build-nixos.sh "$DESKTOP" "$ROOTFS_MODE" "$RUNNER_TEMP/deploy" "$BSP_REVISION"
       - name: Name the verified deployment
         id: names
@@ -86,31 +80,3 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           compression-level: 1
-
-  publish-test-release:
-    name: Publish rootfs and boot images
-    needs: build
-    if: inputs.publish_test_release && github.repository == 'PickaxeHit/linux-zhiyu-rootfs-builder-test' && github.ref_name == github.event.repository.default_branch
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    concurrency:
-      group: nixos-test-release
-      cancel-in-progress: false
-    steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          name: ${{ needs.build.outputs.artifact }}
-          path: deploy
-      - name: Verify and publish
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          cd deploy
-          sha256sum --check --strict SHA256SUMS
-          variant=$(jq -r '.desktop + ", " + .rootfsMode' manifest.json)
-          notes="Lenovo TB378FC NixOS rootfs and four matching boot images. Build commit: $GITHUB_SHA. See manifest.json for the configuration and verify both the rootfs and images against SHA256SUMS."
-          gh release create "nixos-test-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" ./* \
-            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_REF_NAME" --prerelease \
-            --title "Zhiyu NixOS rootfs ($variant)" \
-            --notes "$notes"

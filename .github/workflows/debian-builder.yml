@@ -18,7 +18,7 @@ on:
       username:
         description: Initial username
         type: string
-        default: user
+        default: username
       password:
         description: Initial password (overridden by repo secret ROOTFS_PASSWORD if set)
         type: string
@@ -31,10 +31,6 @@ on:
         description: GitHub repository providing Zhiyu packages (owner/repo)
         type: string
         default: PickaxeHit/linux-zhiyu-pkgs
-      firmware:
-        description: Also install Debian's firmware-linux (our board blobs are always copied)
-        type: boolean
-        default: false
 
 jobs:
   build:
@@ -59,7 +55,6 @@ jobs:
           PASSWORD: ${{ secrets.ROOTFS_PASSWORD || inputs.password }}
           HOST_NAME: ${{ inputs.hostname }}
           PACKAGE_REPOSITORY: ${{ inputs.package_repository }}
-          FIRMWARE: ${{ inputs.firmware }}
         run: |
           echo "::add-mask::$PASSWORD"
           bash scripts/build-debian-rootfs.sh

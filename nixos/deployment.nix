@@ -19,6 +19,9 @@ let
   site = builtins.fromJSON (builtins.readFile ./site.json);
   tarball = pkgs.callPackage (nixpkgs + "/nixos/lib/make-system-tarball.nix") {
     fileName = name;
+    compressCommand = "cat";
+    compressionExtension = "";
+    extraInputs = [ ];
     contents = [ ];
     storeContents = [
       {
@@ -29,7 +32,7 @@ let
     extraCommands = pkgs.writeShellScript "zhiyu-rootfs-layout" ''
       set -euo pipefail
       install -d -m 0755 dev proc sys run var home mnt etc/nixos nix/var/nix/profiles
-      install -d -m 0700 root
+      install -d -m 0700 root var/lib/zhiyu
       install -d -m 1777 tmp
       install -m 0644 /dev/null etc/NIXOS
       install -m 0644 ${source}/flake.nix ${source}/flake.lock etc/nixos/
@@ -42,7 +45,7 @@ let
   metadata = pkgs.writeText "zhiyu-deployment-metadata.json" (
     builtins.toJSON {
       inherit desktop rootfsMode;
-      inherit (site) username hostname login;
+      inherit (site) username hostname;
       systemPath = system.outPath;
       systemDerivation = builtins.unsafeDiscardStringContext system.drvPath;
       kernelVersion = kernel.version;
@@ -55,7 +58,7 @@ in
 {
   system.build.deployment = pkgs.runCommand "zhiyu-${desktop}-${rootfsMode}-deployment" { } ''
     mkdir "$out"
-    ln -s ${tarball}/tarball/${name}.tar.xz "$out/${name}.tar.xz"
+    ln -s ${tarball}/tarball/${name}.tar "$out/${name}.tar"
     ln -s ${system} "$out/system"
     ln -s ${imageSet} "$out/images"
     ln -s ${bsp.dtb}/lenovo-zhiyu.dtb "$out/board.dtb"

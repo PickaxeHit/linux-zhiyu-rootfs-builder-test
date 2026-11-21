@@ -77,7 +77,6 @@ APPS="qbootctl
       network-manager bluetooth bluez
       fonts-noto-core fonts-noto-cjk fonts-noto-color-emoji
       tesseract-ocr-eng tesseract-ocr-chi-sim"
-[ "$FIRMWARE" = "true" ] && APPS="$APPS firmware-linux"
 
 # The desktop itself comes from the distribution's metapackages, with
 # their Recommends: that is how Arch's plasma-meta behaves too, and it

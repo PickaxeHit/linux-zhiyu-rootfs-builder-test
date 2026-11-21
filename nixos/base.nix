@@ -6,7 +6,6 @@
 }:
 let
   site = builtins.fromJSON (builtins.readFile ./site.json);
-  localPassword = site.login == "password";
 in
 {
   assertions = [
@@ -18,13 +17,6 @@ in
     {
       assertion = builtins.match "[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?" site.hostname != null;
       message = "The hostname must be a single valid DNS label.";
-    }
-    {
-      assertion = builtins.elem site.login [
-        "ssh"
-        "password"
-      ];
-      message = "The login method must be ssh or password.";
     }
   ];
   zhiyu.enable = true;
@@ -38,8 +30,7 @@ in
   ];
   nix.channel.enable = false;
 
-  # Enrol the operator by copying a public key to the target before boot.
-  # Passwords can be configured after authenticated login.
+  # Read the initial hash from the deployed filesystem during activation.
   users.users = {
     root.hashedPassword = "!";
     ${site.username} = {
@@ -50,10 +41,9 @@ in
         "video"
       ];
       initialHashedPassword = "!";
-      hashedPasswordFile = lib.mkIf localPassword "/var/lib/zhiyu/initial-password.hash";
+      hashedPasswordFile = "/var/lib/zhiyu/initial-password.hash";
     };
   };
-  security.sudo.wheelNeedsPassword = localPassword;
   services.openssh = {
     enable = true;
     authorizedKeysFiles = [ "/etc/ssh/authorized_keys.d/%u" ];

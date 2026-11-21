@@ -9,12 +9,12 @@ one Actions run.
 ## Build a NixOS deployment
 
 Use **Build Rootfs (NixOS)** in Actions to select a desktop, root filesystem
-location, initial username, hostname and login method.
+location, initial username, hostname and password.
 
 On an ARM64 Nix machine with flakes enabled, run:
 
 ```sh
-ROOTFS_USERNAME=alice ROOTFS_HOSTNAME=zhiyu-tablet ROOTFS_LOGIN=ssh \
+ROOTFS_USERNAME=alice ROOTFS_HOSTNAME=zhiyu-tablet \
   scripts/build-nixos.sh minimal userdata "$PWD/deploy"
 (cd deploy && sha256sum --check --strict SHA256SUMS)
 ```
@@ -28,7 +28,11 @@ the initramfs tries the microSD. On the rescue card it first looks for
 without requiring a Boot ID match. Rescue userspace runs with the kernel
 already loaded by the device. These choices are also available through the
 Actions manual dispatch. An optional expected BSP revision checks the committed lock without
-changing it. Test releases are opt-in in the test repository. The manifest records the selected account settings. Passwords and hashes are provisioned on the extracted rootfs.
+changing it. All rootfs workflows upload their results as Actions artifacts. The initial username is
+`username`, and the initial password is `changeme` unless a different workflow input
+or the `ROOTFS_PASSWORD` repository secret is set. The secret takes precedence.
+NixOS defaults to hostname `nixos`. Its password hash is added to the rootfs during
+packaging and is kept out of the Nix store and the manifest.
 
 ## Deploy a matched set
 
@@ -36,20 +40,10 @@ changing it. Test releases are opt-in in the test repository. The manifest recor
    numeric ownership and permissions when extracting the tarball as a privileged
    user into the empty target directory or mounted microSD root. The target must
    support Unix permissions and symlinks.
-2. Provision the login method selected in Actions. The default username is
-   `operator`. For `ssh`, put your public key at `etc/ssh/authorized_keys.d/<username>`
-   in the extracted root, owned by root with mode `0600`. After connecting
-   over SSH, you can set a desktop password with `sudo passwd <username>`.
-   For `password`, set an initial console or desktop password before booting
-   by saving its hash at `var/lib/zhiyu/initial-password.hash` in the extracted
-   root. SSH continues to use public keys. With `ROOT` set to the extracted
-   rootfs directory, run:
-
-   ```sh
-   sudo install -d -m 0700 "$ROOT/var/lib/zhiyu"
-   sudo install -m 0600 /dev/null "$ROOT/var/lib/zhiyu/initial-password.hash"
-   openssl passwd -6 | sudo tee "$ROOT/var/lib/zhiyu/initial-password.hash" >/dev/null
-   ```
+2. Log in locally using the username and password selected for the build.
+   Change the default password after the first login. For SSH, put your public key
+   at `etc/ssh/authorized_keys.d/<username>` in the extracted root, owned by root
+   with mode `0600`.
 3. For initial deployment, use an unlocked Android bootloader. In fastboot,
    check the active slot with `fastboot getvar current-slot`. Install this set’s
    `boot.img`, `vendor_boot.img`, `init_boot.img` and `vbmeta.img` to the matching

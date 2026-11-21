@@ -66,17 +66,35 @@ def rooted(root, path):
     return result
 
 
+def prepare_rootfs(source, scratch):
+    password = os.environ.pop("PASSWORD", "") or "changeme"
+    require(not any(character in password for character in "\r\n\0"), "Password must be a single line")
+    hashed = command("openssl", "passwd", "-6", "-stdin", input=password + "\n",
+                     stdout=subprocess.PIPE).stdout
+    require(re.fullmatch(r"\$6\$[^\n]+\n", hashed), "Invalid initial password hash")
+    member = Path("var/lib/zhiyu/initial-password.hash")
+    seed = scratch / member
+    seed.parent.mkdir(parents=True)
+    with open(seed, "x", opener=lambda name, flags: os.open(name, flags, 0o600)) as file:
+        file.write(hashed)
+    archive = scratch / source.name
+    shutil.copyfile(source, archive)
+    command("tar", "--append", "--file", archive, "--directory", scratch,
+            "--owner=0", "--group=0", "--mtime=@1", member)
+    return archive, hashed
+
+
 def extract_root(archive, root):
     root.mkdir()
     required = {
         "dev": 0o755, "proc": 0o755, "sys": 0o755, "run": 0o755,
         "etc": 0o755, "var": 0o755, "tmp": 0o1777, "root": 0o700,
-        "nix/var/nix/profiles": 0o755,
+        "nix/var/nix/profiles": 0o755, "var/lib/zhiyu": 0o700,
     }
     # Read the archive's numeric metadata separately from extraction, which
     # can run as an unprivileged user on the CI worker.
     found = set()
-    with tarfile.open(archive, "r|xz") as stream:
+    with tarfile.open(archive, "r|") as stream:
         for entry in stream:
             path = entry.name.removeprefix("./")
             require(entry.uid == entry.gid == 0, f"non-root archive owner: {path}")
@@ -84,7 +102,7 @@ def extract_root(archive, root):
                 require(entry.isdir() and entry.mode == required[path], f"bad permissions on {path}")
                 found.add(path)
     require(found == set(required), "missing root filesystem directories")
-    command("tar", "-xJf", archive, "--directory", root, "--same-permissions", "--no-same-owner")
+    command("tar", "-xf", archive, "--directory", root, "--same-permissions", "--no-same-owner")
     for directory, mode in required.items():
         require(stat.S_IMODE((root / directory).stat().st_mode) == mode, f"wrong extracted mode: {directory}")
 
@@ -188,11 +206,12 @@ def verify(deployment, destination):
     lock = Path("flake.lock")
     require((metadata["bspRevision"], metadata["nixpkgsRevision"]) ==
             locked_revisions(json.loads(lock.read_text())), "runtime revision differs from flake.lock")
-    archive, = deployment.glob("nixos-zhiyu-*-rootfs.tar.xz")
+    archive_source, = deployment.glob("nixos-zhiyu-*-rootfs.tar")
     images = deployment / "images"
     with TemporaryDirectory(prefix="zhiyu-deployment-") as tmp:
         scratch = Path(tmp)
         root = scratch / "root"
+        archive, password_hash = prepare_rootfs(archive_source, scratch)
         extract_root(archive, root)
         profile = rooted(root, "/nix/var/nix/profiles/system")
         require(profile == rooted(root, system), "target profile does not resolve to the shipped generation")
@@ -201,13 +220,16 @@ def verify(deployment, destination):
         require("/build/" not in init.read_text(), "stage 2 references a temporary build directory")
         require(rooted(root, "/etc/nixos/flake.lock").read_bytes() == lock.read_bytes(), "deployed lock differs")
         deployed_site = json.loads(rooted(root, "/etc/nixos/nixos/site.json").read_text())
-        require(all(deployed_site[key] == metadata[key] for key in ("username", "hostname", "login")),
+        require(all(deployed_site[key] == metadata[key] for key in ("username", "hostname")),
                 "deployed account settings differ")
         defaults = json.loads(Path("nixos/site.json").read_text())
         for key, default in defaults.items():
             require(deployed_site[key] == (os.environ.get(f"ROOTFS_{key.upper()}") or default),
                     f"incorrect deployed {key}")
-        require(not (root / "var/lib/zhiyu/initial-password.hash").exists(), "deployment contains a password hash")
+        seed = root / "var/lib/zhiyu/initial-password.hash"
+        require(seed.is_file() and stat.S_IMODE(seed.stat().st_mode) == 0o600,
+                "initial password hash must be a private file")
+        require(seed.read_text() == password_hash, "initial password hash differs")
         moddir = rooted(root, f"{system}/kernel-modules/lib/modules/{metadata['modDirVersion']}")
         require(any(moddir.rglob("*.ko*")), "kernel modules absent")
         require(set(p.name for p in moddir.parent.iterdir()) == {metadata["modDirVersion"]}, "unexpected module versions")
@@ -215,11 +237,13 @@ def verify(deployment, destination):
         hashes, kid, vid, cmdline, bootconfig = unpack_images(deployment, images, scratch, root, system)
         test_boot(deployment, root, system, cmdline, bootconfig, hashes, metadata["rootfsMode"])
 
-    destination.mkdir(parents=True)
-    shutil.copyfile(archive, destination / archive.name)
+        destination.mkdir(parents=True)
+        published_archive = destination / (archive.name + ".xz")
+        with published_archive.open("wb") as file:
+            command("xz", "--threads=0", "--stdout", archive, stdout=file)
     for filename in hashes:
         shutil.copyfile(images / filename, destination / filename)
-    hashes[archive.name] = digest(destination / archive.name)
+    hashes[published_archive.name] = digest(published_archive)
     manifest = metadata | {
         "builderRevision": output("git", "rev-parse", "HEAD"),
         "flakeLockSha256": digest(lock),

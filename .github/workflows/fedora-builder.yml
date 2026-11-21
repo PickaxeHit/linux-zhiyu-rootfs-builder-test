@@ -16,7 +16,7 @@ on:
       username:
         description: Initial username
         type: string
-        default: user
+        default: username
       password:
         description: Initial password (overridden by repo secret ROOTFS_PASSWORD if set)
         type: string

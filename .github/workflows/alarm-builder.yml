@@ -11,7 +11,7 @@ on:
       username:
         description: Initial username
         type: string
-        default: user
+        default: username
       password:
         description: Initial password (overridden by repo secret ROOTFS_PASSWORD if set)
         type: string
@@ -29,10 +29,6 @@ on:
         description: GitHub repository providing Zhiyu packages (owner/repo)
         type: string
         default: PickaxeHit/linux-zhiyu-pkgs
-      firmware:
-        description: Explicitly install linux-firmware
-        type: boolean
-        default: false
 
 jobs:
   build:
@@ -57,7 +53,6 @@ jobs:
           LOGIN_SHELL: ${{ inputs.shell }}
           HOST_NAME: ${{ inputs.hostname }}
           PACKAGE_REPOSITORY: ${{ inputs.package_repository }}
-          FIRMWARE: ${{ inputs.firmware }}
         run: |
           echo "::add-mask::$PASSWORD"
           bash scripts/build-alarm-rootfs.sh

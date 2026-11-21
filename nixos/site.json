@@ -1,5 +1,4 @@
 {
-  "username": "operator",
-  "hostname": "zhiyu",
-  "login": "ssh"
+  "username": "username",
+  "hostname": "nixos"
 }

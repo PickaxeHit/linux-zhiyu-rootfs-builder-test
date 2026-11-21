@@ -204,7 +204,6 @@ APPS=(pipewire-audio pipewire-alsa pipewire-pulse wireplumber alsa-utils
       noto-fonts noto-fonts-cjk noto-fonts-emoji
       tesseract-data-eng tesseract-data-chi_sim
       man-db man-pages texinfo)
-[ "$FIRMWARE" = "true" ] && APPS+=(linux-firmware)
 
 case "$DESKTOP" in
   kde)
