@@ -24,10 +24,16 @@ dnf -y install tar xz policycoreutils
 target=$(mktemp -d)
 trap 'umount -R "$target/dev" 2>/dev/null || true; umount "$target/proc" 2>/dev/null || true' EXIT
 repo=/etc/yum.repos.d/zhiyu.repo
+repo_base="https://github.com/$PACKAGE_REPOSITORY/releases/download/"
+case "$PACKAGE_REPOSITORY" in
+    PickaxeHit/linux-zhiyu|PickaxeHit/linux-zhiyu-next)
+        repo_base="https://raw.githubusercontent.com/$PACKAGE_REPOSITORY/rpm-repodata/fedora/"
+        ;;
+esac
 cat > "$repo" <<REPO
 [zhiyu]
 name=Zhiyu device packages
-baseurl=https://raw.githubusercontent.com/$PACKAGE_REPOSITORY/rpm-repodata/fedora/
+baseurl=$repo_base
 enabled=1
 gpgcheck=0
 repo_gpgcheck=0

@@ -28,7 +28,7 @@ on:
       package_repository:
         description: GitHub repository providing Zhiyu RPMs (owner/repo)
         type: string
-        default: PickaxeHit/linux-zhiyu
+        default: PickaxeHit/linux-zhiyu-pkgs
 
 permissions:
   contents: read

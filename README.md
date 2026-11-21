@@ -1,6 +1,7 @@
 # Zhiyu Rootfs Builder
 
 The Debian, Arch Linux ARM and Fedora workflows produce standalone root filesystems.
+Their device packages come from the [Zhiyu package repository](https://github.com/PickaxeHit/linux-zhiyu-pkgs/releases).
 The NixOS deployment workflow builds a root filesystem and its four paired Android
 boot images from a single pinned NixOS configuration. Download them together from
 one Actions run.
