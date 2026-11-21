@@ -8,14 +8,16 @@ from one Actions run.
 
 ## Build a NixOS deployment
 
-Use **Build Rootfs (NixOS)** in Actions to select a desktop,
-initial username, hostname and password.
+Use **Build Rootfs (NixOS)** in Actions to select a desktop, the NixOS build
+entry point, an initial username, hostname and password. The entry point can
+be `flake` (default) or `configuration.nix`. Both are installed and use the
+same generated configuration and dependency versions.
 
 On an ARM64 Nix machine with flakes enabled, run:
 
 ```sh
 ROOTFS_USERNAME=alice ROOTFS_HOSTNAME=zhiyu-tablet \
-  scripts/build-nixos.sh minimal "$PWD/deploy"
+  scripts/build-nixos.sh minimal "$PWD/deploy" flake
 (cd deploy && sha256sum --check --strict SHA256SUMS)
 ```
 
@@ -89,3 +91,11 @@ CI keeps the official Nix cache enabled. In the test repository, set the Actions
 variable `ZHIYU_BSP_CACHE_PUBLIC_KEY` to the BSP cache's public key to enable
 its signed [package Release cache](https://github.com/PickaxeHit/linux-zhiyu-pkgs/releases/tag/nix-cache-index). The deployment does not publish its NixOS
 store closure to the BSP cache.
+
+The deployment uses NixOS's `system.replaceDependencies` to substitute the
+ABI-matched Zhiyu libcamera in the assembled runtime closure. PipeWire and
+other consumers retain their upstream derivations so they can use the official
+cache. Before starting the system build, CI checks that the required camera
+outputs and, for graphical profiles, PipeWire can be substituted from signed
+caches. A missing or unreachable output fails this step before any source build
+of those packages.

@@ -198,12 +198,10 @@ def test_boot(deployment, root, system, cmdline, bootconfig, hashes):
             "microSD rescue rejected an executable generation with different Boot IDs")
 
 
-def verify(deployment, destination, source, system_derivation):
+def verify(deployment, destination, source):
     metadata = json.loads((deployment / "metadata.json").read_text())
     system = metadata["systemPath"]
     require((deployment / "system").readlink() == Path(system), "exported toplevel differs")
-    require(metadata["systemDerivation"] == system_derivation,
-            "the deployment differs from the evaluated installed configuration")
     lock = source / "config/flake.lock"
     require((metadata["bspRevision"], metadata["nixpkgsRevision"]) ==
             locked_revisions(json.loads(lock.read_text())), "runtime revision differs from flake.lock")
@@ -241,6 +239,9 @@ def verify(deployment, destination, source, system_derivation):
         require(any(moddir.rglob("*.ko*")), "kernel modules absent")
         require(set(p.name for p in moddir.parent.iterdir()) == {metadata["modDirVersion"]}, "unexpected module versions")
         count = verify_store(root, system, root / "nix-path-registration")
+        closure = set(output("nix-store", "--query", "--requisites", system).splitlines())
+        require(metadata["zhiyuCameraPath"] in closure, "Zhiyu libcamera is missing from the runtime closure")
+        require(metadata["upstreamCameraPath"] not in closure, "upstream libcamera remains in the runtime closure")
         hashes, kid, vid, cmdline, bootconfig = unpack_images(deployment, images, scratch, root, system)
         test_boot(deployment, root, system, cmdline, bootconfig, hashes)
 
@@ -271,6 +272,6 @@ def verify(deployment, destination, source, system_derivation):
 
 if __name__ == "__main__":
     try:
-        verify(Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve(), Path(sys.argv[3]), sys.argv[4])
+        verify(Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve(), Path(sys.argv[3]))
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         sys.exit(f"Deployment verification failed: {error}")

@@ -9,6 +9,15 @@ let
   bsp = lock.nodes.${lock.nodes.${lock.root}.inputs.zhiyu};
   zhiyu = builtins.getFlake "github:${bsp.locked.owner}/${bsp.locked.repo}/${bsp.locked.rev}";
   toolchain = lock.nodes.${bsp.inputs.nixpkgs}.locked;
+  upstreamCamera = pkgs.libcamera;
+  zhiyuCamera = zhiyu.packages.aarch64-linux.libcamera;
+  # The runtime rewriter requires equal-length store basenames.
+  cameraReplacement = pkgs.runCommand upstreamCamera.name { } ''
+    for lib in libcamera libcamera-base; do
+      test -e "${zhiyuCamera}/lib/$lib.so.${upstreamCamera.version}"
+    done
+    ln -s ${zhiyuCamera} "$out"
+  '';
 in
 {
   imports = [ zhiyu.nixosModules.default ];
@@ -22,6 +31,14 @@ in
     revision = toolchain.rev;
   };
   zhiyu.enable = true;
+  # Keep nixpkgs consumers on their original derivations until the closure is assembled.
+  zhiyu.camera.enable = false;
+  system.replaceDependencies.replacements = [
+    {
+      oldDependency = upstreamCamera;
+      newDependency = cameraReplacement;
+    }
+  ];
   # The BSP initramfs mounts the writable root and passes it to stage 2.
   # Leave / out of fstab so systemd keeps that mount and its existing options.
   networking.hostName = @HOSTNAME@;
@@ -67,7 +84,10 @@ in
       PermitRootLogin = "no";
     };
   };
-  environment.systemPackages = [ pkgs.git ];
+  environment.systemPackages = [
+    pkgs.git
+    upstreamCamera
+  ];
 
   # The official system tarball contains Nix validity registrations. Load
   # them before store consumers, and keep the file on disk if import fails.

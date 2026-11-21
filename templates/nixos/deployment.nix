@@ -8,7 +8,12 @@
   ...
 }:
 let
-  inherit (settings) desktop username hostname;
+  inherit (settings)
+    configuration
+    desktop
+    username
+    hostname
+    ;
   bsp = zhiyu.packages.aarch64-linux;
   bspChecks = zhiyu.checks.aarch64-linux;
   system = config.system.build.toplevel;
@@ -40,9 +45,16 @@ let
   };
   metadata = pkgs.writeText "zhiyu-deployment-metadata.json" (
     builtins.toJSON {
-      inherit desktop username hostname;
+      inherit
+        configuration
+        desktop
+        username
+        hostname
+        ;
       systemPath = system.outPath;
       systemDerivation = builtins.unsafeDiscardStringContext system.drvPath;
+      upstreamCameraPath = builtins.unsafeDiscardStringContext pkgs.libcamera.outPath;
+      zhiyuCameraPath = builtins.unsafeDiscardStringContext bsp.libcamera.outPath;
       kernelVersion = kernel.version;
       modDirVersion = kernel.modDirVersion;
       bspRevision = zhiyu.rev;

@@ -3,21 +3,37 @@ let
   flake = builtins.getFlake ("path:" + toString source);
   inherit (flake.inputs) nixpkgs zhiyu;
   settings = builtins.fromJSON (builtins.readFile ./settings.json);
-  system = flake.nixosConfigurations.zhiyu.extendModules {
-    modules = [ ./deployment.nix ];
-    specialArgs = {
-      inherit
-        source
-        nixpkgs
-        zhiyu
-        settings
-        ;
-    };
+  specialArgs = {
+    inherit
+      source
+      nixpkgs
+      zhiyu
+      settings
+      ;
   };
+  evaluated =
+    if settings.configuration == "configuration.nix" then
+      import (nixpkgs + "/nixos") {
+        inherit specialArgs;
+        configuration.imports = [
+          (source + "/configuration.nix")
+          ./deployment.nix
+        ];
+      }
+    else
+      flake.nixosConfigurations.zhiyu.extendModules {
+        inherit specialArgs;
+        modules = [ ./deployment.nix ];
+      };
+  inherit (evaluated) config pkgs;
 in
 {
-  deployment = system.config.system.build.deployment;
+  deployment = config.system.build.deployment;
+  cameraCachePaths = [
+    pkgs.libcamera
+    zhiyu.packages.aarch64-linux.libcamera
+  ]
+  ++ pkgs.lib.optional config.services.pipewire.enable config.services.pipewire.package;
   inheritsRootMount =
-    !(system.config.fileSystems ? "/")
-    && !(builtins.any (mount: mount.where == "/") system.config.systemd.mounts);
+    !(config.fileSystems ? "/") && !(builtins.any (mount: mount.where == "/") config.systemd.mounts);
 }

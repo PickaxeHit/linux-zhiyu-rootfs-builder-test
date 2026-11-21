@@ -20,6 +20,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("desktop", choices=DESKTOPS)
     parser.add_argument("directory", type=Path)
+    parser.add_argument("--configuration", choices=("flake", "configuration.nix"), default="flake")
     args = parser.parse_args()
     username = os.environ.get("ROOTFS_USERNAME") or "username"
     hostname = os.environ.get("ROOTFS_HOSTNAME") or "nixos"
@@ -44,7 +45,12 @@ def main():
     for name in ("build.nix", "deployment.nix"):
         shutil.copyfile(templates / name, args.directory / name)
     (args.directory / "settings.json").write_text(
-        json.dumps({"desktop": args.desktop, "username": username, "hostname": hostname}) + "\n"
+        json.dumps({
+            "desktop": args.desktop,
+            "configuration": args.configuration,
+            "username": username,
+            "hostname": hostname,
+        }) + "\n"
     )
 
 

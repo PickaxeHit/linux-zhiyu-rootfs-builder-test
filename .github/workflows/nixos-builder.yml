@@ -7,6 +7,11 @@ on:
         type: choice
         options: [minimal, kde, gnome, plasmamobile]
         default: minimal
+      configuration:
+        description: NixOS build entry point
+        type: choice
+        options: [flake, configuration.nix]
+        default: flake
       username:
         description: Initial username
         type: string
@@ -30,6 +35,8 @@ jobs:
     timeout-minutes: 180
     env:
       DESKTOP: ${{ inputs.desktop || 'minimal' }}
+      CONFIGURATION: ${{ inputs.configuration || 'flake' }}
+      ZHIYU_REQUIRE_CAMERA_CACHE: '1'
       ROOTFS_USERNAME: ${{ inputs.username }}
       ROOTFS_HOSTNAME: ${{ inputs.hostname }}
     steps:
@@ -47,10 +54,10 @@ jobs:
       - name: Build and verify the rootfs and matching boot images
         env:
           PASSWORD: ${{ secrets.ROOTFS_PASSWORD || inputs.password || 'changeme' }}
-        run: scripts/build-nixos.sh "$DESKTOP" "$RUNNER_TEMP/deploy"
+        run: scripts/build-nixos.sh "$DESKTOP" "$RUNNER_TEMP/deploy" "$CONFIGURATION"
       - name: Name the verified deployment
         id: names
-        run: echo "artifact=nixos-zhiyu-$DESKTOP-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+        run: echo "artifact=nixos-zhiyu-$DESKTOP-$CONFIGURATION-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ${{ steps.names.outputs.artifact }}
