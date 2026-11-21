@@ -56,6 +56,8 @@ in
     ln -s ${tarball}/tarball/${name}.tar.xz "$out/${name}.tar.xz"
     ln -s ${system} "$out/system"
     ln -s ${imageSet} "$out/images"
+    ln -s ${bsp.dtb}/lenovo-zhiyu.dtb "$out/board.dtb"
+    ln -s ${config.system.build.zhiyuInitramfs}/initramfs.cpio.gz "$out/initramfs.cpio.gz"
     ln -s ${bsp.android-image-tools} "$out/android-tools"
     ln -s ${bsp.static-helpers}/bin/zhiyu-boot-select "$out/boot-selector"
     ln -s ${bspChecks.boot-tools.simulator}/bin/zhiyu-install "$out/flasher-simulator"
