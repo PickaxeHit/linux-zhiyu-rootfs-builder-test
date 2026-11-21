@@ -92,7 +92,7 @@ variable `ZHIYU_BSP_CACHE_PUBLIC_KEY` to the BSP cache's public key to enable
 its signed [package Release cache](https://github.com/PickaxeHit/linux-zhiyu-pkgs/releases/tag/nix-cache-index). The deployment does not publish its NixOS
 store closure to the BSP cache.
 
-The deployment uses NixOS's `system.replaceDependencies` to substitute the
+The BSP NixOS module uses `system.replaceDependencies` to substitute the
 ABI-matched Zhiyu libcamera in the assembled runtime closure. PipeWire and
 other consumers retain their upstream derivations so they can use the official
 cache. Before starting the system build, CI checks that the required camera

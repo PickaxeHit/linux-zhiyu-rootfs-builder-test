@@ -26,12 +26,13 @@ let
         modules = [ ./deployment.nix ];
       };
   inherit (evaluated) config pkgs;
+  camera = config.system.build.zhiyuCamera;
 in
 {
   deployment = config.system.build.deployment;
   cameraCachePaths = [
-    pkgs.libcamera
-    zhiyu.packages.aarch64-linux.libcamera
+    camera.upstream
+    camera.fork
   ]
   ++ pkgs.lib.optional config.services.pipewire.enable config.services.pipewire.package;
   inheritsRootMount =

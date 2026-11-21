@@ -15,6 +15,7 @@ let
     hostname
     ;
   bsp = zhiyu.packages.aarch64-linux;
+  camera = config.system.build.zhiyuCamera;
   bspChecks = zhiyu.checks.aarch64-linux;
   system = config.system.build.toplevel;
   imageSet = config.system.build.zhiyuImages;
@@ -53,8 +54,8 @@ let
         ;
       systemPath = system.outPath;
       systemDerivation = builtins.unsafeDiscardStringContext system.drvPath;
-      upstreamCameraPath = builtins.unsafeDiscardStringContext pkgs.libcamera.outPath;
-      zhiyuCameraPath = builtins.unsafeDiscardStringContext bsp.libcamera.outPath;
+      upstreamCameraPath = builtins.unsafeDiscardStringContext camera.upstream.outPath;
+      zhiyuCameraPath = builtins.unsafeDiscardStringContext camera.fork.outPath;
       kernelVersion = kernel.version;
       modDirVersion = kernel.modDirVersion;
       bspRevision = zhiyu.rev;
