@@ -140,7 +140,7 @@ def unpack_images(deployment, images, scratch, root, system, metadata):
     bootconfig = (vendor / "bootconfig").read_text()
     require(f"zhiyu.kernel_id={kernel_id}" in cmdline.split(), "boot kernel ID differs")
     require(f'zhiyu.vendor_id = "{vendor_id}"' in bootconfig.splitlines(), "boot vendor ID differs")
-    require(("zhiyu.root=sd" in cmdline.split()) == (metadata["rootfsMode"] == "sd"), "wrong root mode")
+    require("zhiyu.root=sd" not in cmdline.split(), "deployment bypasses userdata-first boot")
     return hashes, kernel_id, vendor_id, cmdline, bootconfig
 
 

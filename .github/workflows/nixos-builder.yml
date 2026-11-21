@@ -11,7 +11,7 @@ on:
         options: [minimal, kde, gnome, plasmamobile]
         default: minimal
       rootfs_mode:
-        description: Root filesystem location (Android userdata or microSD)
+        description: Root filesystem location (Android userdata or microSD rescue)
         type: choice
         options: [userdata, sd]
         default: userdata
@@ -67,6 +67,12 @@ jobs:
           python3 scripts/validate_nixos_lock.py "$BSP_REVISION"
           nix fmt -- --check flake.nix nixos/*.nix
           nix flake check --no-build --no-update-lock-file --no-write-lock-file
+          userdata=$(nix eval --raw .#nixosConfigurations."$DESKTOP"-userdata.config.system.build.zhiyuImages.drvPath)
+          rescue=$(nix eval --raw .#nixosConfigurations."$DESKTOP"-sd.config.system.build.zhiyuImages.drvPath)
+          if [[ "$userdata" != "$rescue" ]]; then
+            echo 'The microSD rescue root must use the same images as userdata' >&2
+            exit 1
+          fi
           for script in scripts/build-{alarm,debian,fedora}-rootfs.sh; do bash -n "$script"; done
       - name: Build and verify the rootfs and matching boot images
         run: scripts/build-nixos.sh "$DESKTOP" "$ROOTFS_MODE" "$RUNNER_TEMP/deploy" "$BSP_REVISION"
