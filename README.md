@@ -54,5 +54,5 @@ BSP's locked nixpkgs and never resolves the BSP branch during a build.
 
 CI keeps the official Nix cache enabled. In the test repository, set the Actions
 variable `ZHIYU_BSP_CACHE_PUBLIC_KEY` to the BSP cache's public key to enable
-its signed `nix-repodata` endpoint. The deployment does not publish its NixOS
+its signed [package Release cache](https://github.com/PickaxeHit/linux-zhiyu-pkgs/releases/tag/nix-cache-index). The deployment does not publish its NixOS
 store closure to the BSP cache.

@@ -40,7 +40,7 @@ jobs:
       - uses: cachix/install-nix-action@d698718aa798980d17dd749f03beae0b51183399
         with:
           extra_nix_config: |
-            extra-substituters = ${{ vars.ZHIYU_BSP_CACHE_PUBLIC_KEY != '' && 'https://raw.githubusercontent.com/PickaxeHit/linux-zhiyu-nix/nix-repodata' || '' }}
+            extra-substituters = ${{ vars.ZHIYU_BSP_CACHE_PUBLIC_KEY != '' && 'https://github.com/PickaxeHit/linux-zhiyu-pkgs/releases/download/nix-cache-index/' || '' }}
             extra-trusted-public-keys = ${{ vars.ZHIYU_BSP_CACHE_PUBLIC_KEY }}
       - name: Validate lock and configurations
         run: |
