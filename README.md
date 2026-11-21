@@ -95,7 +95,4 @@ store closure to the BSP cache.
 The BSP NixOS module uses `system.replaceDependencies` to substitute the
 ABI-matched Zhiyu libcamera in the assembled runtime closure. PipeWire and
 other consumers retain their upstream derivations so they can use the official
-cache. Before starting the system build, CI checks that the required camera
-outputs and, for graphical profiles, PipeWire can be substituted from signed
-caches. A missing or unreachable output fails this step before any source build
-of those packages.
+cache. Nix handles substitution during the deployment build.

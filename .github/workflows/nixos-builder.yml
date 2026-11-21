@@ -36,7 +36,6 @@ jobs:
     env:
       DESKTOP: ${{ inputs.desktop || 'minimal' }}
       CONFIGURATION: ${{ inputs.configuration || 'flake' }}
-      ZHIYU_REQUIRE_CAMERA_CACHE: '1'
       ROOTFS_USERNAME: ${{ inputs.username }}
       ROOTFS_HOSTNAME: ${{ inputs.hostname }}
     steps:

@@ -25,16 +25,10 @@ let
         inherit specialArgs;
         modules = [ ./deployment.nix ];
       };
-  inherit (evaluated) config pkgs;
-  camera = config.system.build.zhiyuCamera;
+  inherit (evaluated) config;
 in
 {
   deployment = config.system.build.deployment;
-  cameraCachePaths = [
-    camera.upstream
-    camera.fork
-  ]
-  ++ pkgs.lib.optional config.services.pipewire.enable config.services.pipewire.package;
   inheritsRootMount =
     !(config.fileSystems ? "/") && !(builtins.any (mount: mount.where == "/") config.systemd.mounts);
 }
