@@ -1,21 +1,20 @@
 {
   config,
-  desktop,
   pkgs,
-  self,
+  source,
+  settings,
   nixpkgs,
   zhiyu,
-  bsp,
-  bspChecks,
   ...
 }:
 let
+  inherit (settings) desktop username hostname;
+  bsp = zhiyu.packages.aarch64-linux;
+  bspChecks = zhiyu.checks.aarch64-linux;
   system = config.system.build.toplevel;
   imageSet = config.system.build.zhiyuImages;
   kernel = config.boot.kernelPackages.kernel;
   name = "nixos-zhiyu-${desktop}-rootfs";
-  source = self.outPath;
-  site = builtins.fromJSON (builtins.readFile ./site.json);
   tarball = pkgs.callPackage (nixpkgs + "/nixos/lib/make-system-tarball.nix") {
     fileName = name;
     compressCommand = "cat";
@@ -34,17 +33,14 @@ let
       install -d -m 0700 root var/lib/zhiyu
       install -d -m 1777 tmp
       install -m 0644 /dev/null etc/NIXOS
-      install -m 0644 ${source}/flake.nix ${source}/flake.lock etc/nixos/
-      cp -r ${source}/nixos etc/nixos/nixos
-      chmod -R u+w etc/nixos/nixos
+      install -m 0644 ${source}/{configuration.nix,flake.nix,flake.lock} etc/nixos/
       ln -s ${system} nix/var/nix/profiles/system-1-link
       ln -s system-1-link nix/var/nix/profiles/system
     '';
   };
   metadata = pkgs.writeText "zhiyu-deployment-metadata.json" (
     builtins.toJSON {
-      inherit desktop;
-      inherit (site) username hostname;
+      inherit desktop username hostname;
       systemPath = system.outPath;
       systemDerivation = builtins.unsafeDiscardStringContext system.drvPath;
       kernelVersion = kernel.version;

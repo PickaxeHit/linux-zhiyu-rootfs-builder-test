@@ -198,11 +198,13 @@ def test_boot(deployment, root, system, cmdline, bootconfig, hashes):
             "microSD rescue rejected an executable generation with different Boot IDs")
 
 
-def verify(deployment, destination):
+def verify(deployment, destination, source, system_derivation):
     metadata = json.loads((deployment / "metadata.json").read_text())
     system = metadata["systemPath"]
     require((deployment / "system").readlink() == Path(system), "exported toplevel differs")
-    lock = Path("flake.lock")
+    require(metadata["systemDerivation"] == system_derivation,
+            "the deployment differs from the evaluated installed configuration")
+    lock = source / "config/flake.lock"
     require((metadata["bspRevision"], metadata["nixpkgsRevision"]) ==
             locked_revisions(json.loads(lock.read_text())), "runtime revision differs from flake.lock")
     archive_source, = deployment.glob("nixos-zhiyu-*-rootfs.tar")
@@ -217,18 +219,20 @@ def verify(deployment, destination):
         init = rooted(root, f"{system}/init")
         require(os.access(init, os.X_OK), "stage 2 init is not executable")
         require("/build/" not in init.read_text(), "stage 2 references a temporary build directory")
-        require(rooted(root, "/etc/nixos/flake.lock").read_bytes() == lock.read_bytes(), "deployed lock differs")
+        installed_config = rooted(root, "/etc/nixos")
+        expected_config = source / "config"
+        require({path.name for path in installed_config.iterdir()} ==
+                {path.name for path in expected_config.iterdir()}, "unexpected deployed configuration files")
+        for path in expected_config.iterdir():
+            require((installed_config / path.name).read_bytes() == path.read_bytes(),
+                    f"deployed {path.name} differs")
         fstab = rooted(root, f"{system}/etc/fstab").read_text()
         require(not any(line.split()[1:2] == ["/"] for line in fstab.splitlines()
                         if line.strip() and not line.lstrip().startswith("#")),
                 "stage 2 fstab would override the initramfs root")
-        deployed_site = json.loads(rooted(root, "/etc/nixos/nixos/site.json").read_text())
-        require(all(deployed_site[key] == metadata[key] for key in ("username", "hostname")),
-                "deployed account settings differ")
-        defaults = json.loads(Path("nixos/site.json").read_text())
-        for key, default in defaults.items():
-            require(deployed_site[key] == (os.environ.get(f"ROOTFS_{key.upper()}") or default),
-                    f"incorrect deployed {key}")
+        settings = json.loads((source / "settings.json").read_text())
+        require(all(metadata[key] == value for key, value in settings.items()),
+                "deployed configuration settings differ")
         seed = root / "var/lib/zhiyu/initial-password.hash"
         require(seed.is_file() and stat.S_IMODE(seed.stat().st_mode) == 0o600,
                 "initial password hash must be a private file")
@@ -267,6 +271,6 @@ def verify(deployment, destination):
 
 if __name__ == "__main__":
     try:
-        verify(Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve())
+        verify(Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve(), Path(sys.argv[3]), sys.argv[4])
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         sys.exit(f"Deployment verification failed: {error}")

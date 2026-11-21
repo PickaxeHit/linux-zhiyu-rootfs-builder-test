@@ -5,24 +5,26 @@
   ...
 }:
 let
-  site = builtins.fromJSON (builtins.readFile ./site.json);
+  lock = builtins.fromJSON (builtins.readFile ./flake.lock);
+  bsp = lock.nodes.${lock.nodes.${lock.root}.inputs.zhiyu};
+  zhiyu = builtins.getFlake "github:${bsp.locked.owner}/${bsp.locked.repo}/${bsp.locked.rev}";
+  toolchain = lock.nodes.${bsp.inputs.nixpkgs}.locked;
 in
 {
-  assertions = [
-    {
-      assertion =
-        builtins.match "[a-z_][a-z0-9_-]{0,31}" site.username != null && site.username != "root";
-      message = "The initial user must have a valid non-root Linux username.";
-    }
-    {
-      assertion = builtins.match "[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?" site.hostname != null;
-      message = "The hostname must be a single valid DNS label.";
-    }
-  ];
+  imports = [ zhiyu.nixosModules.default ];
+  nixpkgs.hostPlatform = "aarch64-linux";
+  nixpkgs.flake = {
+    setFlakeRegistry = false;
+    setNixPath = false;
+  };
+  system.nixos = {
+    inherit (zhiyu.inputs.nixpkgs.lib.trivial) versionSuffix;
+    revision = toolchain.rev;
+  };
   zhiyu.enable = true;
   # The BSP initramfs mounts the writable root and passes it to stage 2.
   # Leave / out of fstab so systemd keeps that mount and its existing options.
-  networking.hostName = site.hostname;
+  networking.hostName = @HOSTNAME@;
   networking.networkmanager.enable = true;
   system.stateVersion = "26.05";
 
@@ -31,11 +33,21 @@ in
     "flakes"
   ];
   nix.channel.enable = false;
+  # Make the traditional rebuild use the same pinned nixpkgs as the Flake.
+  nix.registry.nixpkgs.to = {
+    type = "github";
+    inherit (toolchain) owner repo rev;
+  };
+  nix.nixPath = [
+    "nixpkgs=flake:nixpkgs"
+    "nixos-config=/etc/nixos/configuration.nix"
+  ];
+  nix.settings.nix-path = config.nix.nixPath;
 
   # Read the initial hash from the deployed filesystem during activation.
   users.users = {
     root.hashedPassword = "!";
-    ${site.username} = {
+    @USERNAME@ = {
       isNormalUser = true;
       extraGroups = [
         "wheel"
@@ -87,4 +99,5 @@ in
     requires = [ "zhiyu-register-store.service" ];
     after = [ "zhiyu-register-store.service" ];
   };
+@DESKTOP@
 }

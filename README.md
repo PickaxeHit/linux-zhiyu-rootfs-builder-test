@@ -3,8 +3,8 @@
 The Debian, Arch Linux ARM and Fedora workflows produce standalone root filesystems.
 Their device packages come from the [Zhiyu package repository](https://github.com/PickaxeHit/linux-zhiyu-pkgs/releases).
 The NixOS deployment workflow builds a root filesystem and its four paired Android
-boot images from a single pinned NixOS configuration. Download them together from
-one Actions run.
+boot images from a single generated NixOS configuration. Download them together
+from one Actions run.
 
 ## Build a NixOS deployment
 
@@ -27,8 +27,8 @@ If Android userdata cannot be unlocked or cannot provide a bootable system,
 the initramfs tries the microSD. On the rescue card it first looks for
 `/sbin/init`, then tries the current or another executable NixOS generation
 without requiring a Boot ID match. Rescue userspace runs with the kernel
-already loaded by the device. An optional expected BSP revision checks the
-committed lock without changing it. All rootfs workflows upload their results as Actions artifacts. The initial username is
+already loaded by the device. All rootfs workflows upload their results as
+Actions artifacts. The initial username is
 `username`, and the initial password is `changeme` unless a different workflow input
 or the `ROOTFS_PASSWORD` repository secret is set. The secret takes precedence.
 NixOS defaults to hostname `nixos`. Its password hash is added to the rootfs during
@@ -52,20 +52,38 @@ packaging and is kept out of the Nix store and the manifest.
    microSD rescue root to an existing installation, extract the rootfs to the
    card and keep the installed boot images.
 4. The first boot imports the tarball's Nix store registration records. The
-   included `/etc/nixos` contains the pinned configuration. For upgrades, use
-   `sudo nixos-rebuild boot --flake /etc/nixos#minimal` with the variant
-   you deployed, then use the BSP's `zhiyu-install --expect-slot a|b GENERATION`
-   with the resulting generation path (choose your actual slot). It supports
-   `--dry-run`. Keep a known-good generation available for recovery.
+   selected desktop, user and hostname are already set in
+   `/etc/nixos/configuration.nix`. Edit this file for system changes. Both
+   rebuild commands below use the same configuration and dependency versions.
+
+   ```sh
+   # Flake entry point
+   sudo nixos-rebuild boot --flake /etc/nixos#zhiyu
+
+   # Traditional entry point
+   sudo nixos-rebuild boot
+   ```
+
+   Use the BSP's `zhiyu-install --expect-slot a|b GENERATION` with the resulting
+   generation path and your actual slot. It supports `--dry-run`. Keep a
+   known-good generation available for recovery.
 
 The four Android partition writes are separate operations. Retain a recovery path
 and preserve the matching rootfs and image set.
 
-## Update the BSP and cache
+## BSP versions and cache
 
-Run `scripts/update-bsp.sh FULL_BSP_COMMIT` with a BSP commit that passed its
-checks, and commit both `flake.nix` and `flake.lock`. The deployment follows the
-BSP's locked nixpkgs and never resolves the BSP branch during a build.
+The builder repository stores templates. At the start of each build, Nix resolves
+the current `main` commit of [linux-zhiyu](https://github.com/PickaxeHit/linux-zhiyu)
+and follows the nixpkgs version pinned by that BSP. The generated lock stays
+fixed for that build and is installed at `/etc/nixos/flake.lock` alongside
+`flake.nix` and `configuration.nix`. The archive manifest records the exact
+BSP and nixpkgs commits and the lock checksum.
+
+To deliberately update an installed system's BSP and its nixpkgs input, run
+`sudo nix flake update zhiyu --flake /etc/nixos`, then rebuild with the Flake
+entry point. That also updates the traditional entry point's nixpkgs path
+for subsequent rebuilds.
 
 CI keeps the official Nix cache enabled. In the test repository, set the Actions
 variable `ZHIYU_BSP_CACHE_PUBLIC_KEY` to the BSP cache's public key to enable

@@ -19,9 +19,6 @@ on:
         description: System hostname
         type: string
         default: nixos
-      bsp_revision:
-        description: Expected BSP commit already pinned in flake.lock
-        type: string
 
 permissions:
   contents: read
@@ -33,7 +30,6 @@ jobs:
     timeout-minutes: 180
     env:
       DESKTOP: ${{ inputs.desktop || 'minimal' }}
-      BSP_REVISION: ${{ inputs.bsp_revision }}
       ROOTFS_USERNAME: ${{ inputs.username }}
       ROOTFS_HOSTNAME: ${{ inputs.hostname }}
     steps:
@@ -45,19 +41,13 @@ jobs:
           extra_nix_config: |
             extra-substituters = ${{ vars.ZHIYU_BSP_CACHE_PUBLIC_KEY != '' && 'https://github.com/PickaxeHit/linux-zhiyu-pkgs/releases/download/nix-cache-index/' || '' }}
             extra-trusted-public-keys = ${{ vars.ZHIYU_BSP_CACHE_PUBLIC_KEY }}
-      - name: Validate lock and configurations
+      - name: Validate build scripts
         run: |
-          python3 scripts/validate_nixos_lock.py "$BSP_REVISION"
-          nix fmt -- --check flake.nix nixos/*.nix
-          nix flake check --no-build --no-update-lock-file --no-write-lock-file
-          nix eval --json .#nixosConfigurations."$DESKTOP".config \
-            --apply 'cfg: cfg.fileSystems ? "/" || builtins.any (mount: mount.where == "/") cfg.systemd.mounts' |
-            jq -e '. == false'
-          for script in scripts/build-{alarm,debian,fedora}-rootfs.sh; do bash -n "$script"; done
+          for script in scripts/build-*.sh; do bash -n "$script"; done
       - name: Build and verify the rootfs and matching boot images
         env:
           PASSWORD: ${{ secrets.ROOTFS_PASSWORD || inputs.password || 'changeme' }}
-        run: scripts/build-nixos.sh "$DESKTOP" "$RUNNER_TEMP/deploy" "$BSP_REVISION"
+        run: scripts/build-nixos.sh "$DESKTOP" "$RUNNER_TEMP/deploy"
       - name: Name the verified deployment
         id: names
         run: echo "artifact=nixos-zhiyu-$DESKTOP-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
