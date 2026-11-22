@@ -1,7 +1,6 @@
 {
   config,
   pkgs,
-  source,
   settings,
   nixpkgs,
   zhiyu,
@@ -20,30 +19,6 @@ let
   system = config.system.build.toplevel;
   imageSet = config.system.build.zhiyuImages;
   kernel = config.boot.kernelPackages.kernel;
-  name = "nixos-zhiyu-${desktop}-rootfs";
-  tarball = pkgs.callPackage (nixpkgs + "/nixos/lib/make-system-tarball.nix") {
-    fileName = name;
-    compressCommand = "cat";
-    compressionExtension = "";
-    extraInputs = [ ];
-    contents = [ ];
-    storeContents = [
-      {
-        object = system;
-        symlink = "none";
-      }
-    ];
-    extraCommands = pkgs.writeShellScript "zhiyu-rootfs-layout" ''
-      set -euo pipefail
-      install -d -m 0755 dev proc sys run var home mnt etc/nixos nix/var/nix/profiles
-      install -d -m 0700 root
-      install -d -m 1777 tmp
-      install -m 0644 /dev/null etc/NIXOS
-      install -m 0644 ${source}/{configuration.nix,flake.nix,flake.lock} etc/nixos/
-      ln -s ${system} nix/var/nix/profiles/system-1-link
-      ln -s system-1-link nix/var/nix/profiles/system
-    '';
-  };
   metadata = pkgs.writeText "zhiyu-deployment-metadata.json" (
     builtins.toJSON {
       inherit
@@ -66,7 +41,7 @@ in
 {
   system.build.deployment = pkgs.runCommand "zhiyu-${desktop}-deployment" { } ''
     mkdir "$out"
-    ln -s ${tarball}/tarball/${name}.tar "$out/${name}.tar"
+    ln -s ${pkgs.nixos-install}/bin/nixos-install "$out/nixos-install"
     ln -s ${system} "$out/system"
     ln -s ${imageSet} "$out/images"
     ln -s ${bsp.dtb}/lenovo-zhiyu.dtb "$out/board.dtb"

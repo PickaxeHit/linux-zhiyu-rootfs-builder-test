@@ -69,35 +69,5 @@ in
   };
   environment.systemPackages = [ pkgs.git ];
 
-  # The official system tarball contains Nix validity registrations. Load
-  # them before store consumers, and keep the file on disk if import fails.
-  systemd.services.zhiyu-register-store = {
-    description = "Register the deployed Nix store closure";
-    wantedBy = [ "sysinit.target" ];
-    after = [ "local-fs.target" ];
-    before = [
-      "sysinit.target"
-      "shutdown.target"
-      "nix-daemon.service"
-      "nix-daemon.socket"
-    ];
-    conflicts = [ "shutdown.target" ];
-    unitConfig = {
-      DefaultDependencies = false;
-      ConditionPathExists = "/nix-path-registration";
-    };
-    serviceConfig = {
-      Type = "oneshot";
-      RemainAfterExit = true;
-    };
-    script = ''
-      ${lib.getExe' config.nix.package "nix-store"} --load-db < /nix-path-registration
-      ${pkgs.coreutils}/bin/rm /nix-path-registration
-    '';
-  };
-  systemd.services.nix-daemon = {
-    requires = [ "zhiyu-register-store.service" ];
-    after = [ "zhiyu-register-store.service" ];
-  };
 @DESKTOP@
 }

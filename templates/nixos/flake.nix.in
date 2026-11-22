@@ -7,7 +7,7 @@
   outputs =
     { nixpkgs, ... }:
     {
-      nixosConfigurations.zhiyu = nixpkgs.lib.nixosSystem {
+      nixosConfigurations.@HOSTNAME@ = nixpkgs.lib.nixosSystem {
         modules = [ ./configuration.nix ];
       };
     };

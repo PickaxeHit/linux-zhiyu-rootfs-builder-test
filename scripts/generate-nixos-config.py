@@ -41,7 +41,8 @@ def main():
     body = body.replace("@HOSTNAME@", json.dumps(hostname))
     body = body.replace("@DESKTOP@\n", desktop + "\n" if desktop else "")
     (config / "configuration.nix").write_text(body)
-    shutil.copyfile(templates / "flake.nix", config / "flake.nix")
+    flake = (templates / "flake.nix.in").read_text().replace("@HOSTNAME@", json.dumps(hostname))
+    (config / "flake.nix").write_text(flake)
     for name in ("build.nix", "deployment.nix"):
         shutil.copyfile(templates / name, args.directory / name)
     (args.directory / "settings.json").write_text(

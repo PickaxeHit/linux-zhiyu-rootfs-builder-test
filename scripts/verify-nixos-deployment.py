@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Verify a deployed closure and its matched boot images, then collect the release files."""
 from collections import deque
+from contextlib import closing
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -8,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import sqlite3
 import stat
 import subprocess
 import sys
@@ -66,26 +68,50 @@ def rooted(root, path):
     return result
 
 
-def prepare_rootfs(source, scratch, username):
+def prepare_rootfs(deployment, source, scratch, metadata):
     password = os.environ.pop("PASSWORD", "") or "changeme"
     require(not any(character in password for character in "\r\n\0"), "Password must be a single line")
-    hashed = command("openssl", "passwd", "-6", "-stdin", input=password + "\n",
-                     stdout=subprocess.PIPE).stdout
-    require(re.fullmatch(r"\$6\$[^\n]+\n", hashed), "Invalid initial password hash")
-    # NixOS creates /etc/passwd and /etc/group at first activation, while
-    # mutable users keep matching entries already present in /etc/shadow.
+    username = metadata["username"]
     require(re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", username) and username != "root",
             "Invalid initial username")
-    member = Path("etc/shadow")
-    shadow = scratch / member
-    shadow.parent.mkdir()
-    entries = f"root:!:1::::::\n{username}:{hashed.strip()}:1::::::\n"
-    with open(shadow, "x", opener=lambda name, flags: os.open(name, flags, 0o600)) as file:
-        file.write(entries)
-    archive = scratch / source.name
-    shutil.copyfile(source, archive)
-    command("tar", "--append", "--file", archive, "--directory", scratch,
-            "--owner=0", "--group=0", "--mtime=@1", member)
+
+    with TemporaryDirectory(prefix="zhiyu-install-", dir=scratch) as staging:
+        root = Path(staging)
+        root.chmod(0o755)
+        for name in ("dev", "proc", "sys", "run", "var", "home", "mnt", "root", "tmp", "etc", "etc/nixos"):
+            directory = root / name
+            directory.mkdir(parents=True)
+            directory.chmod({"root": 0o700, "tmp": 0o1777}.get(name, 0o755))
+        for name in ("configuration.nix", "flake.nix", "flake.lock"):
+            destination = root / "etc/nixos" / name
+            shutil.copyfile(source / "config" / name, destination)
+            destination.chmod(0o644)
+
+        system = metadata["systemPath"]
+        # Use the Nix version that will open this store on the target.
+        installer_env = os.environ | {"PATH": f"{system}/sw/bin:{os.environ['PATH']}"}
+        command(deployment / "nixos-install", "--root", root, "--system", system,
+                "--no-bootloader", "--no-root-passwd", "--no-channel-copy", "--max-jobs", "0",
+                env=installer_env)
+
+        hashed = command("openssl", "passwd", "-6", "-stdin", input=password + "\n",
+                         stdout=subprocess.PIPE).stdout
+        require(re.fullmatch(r"\$6\$[^\n]+\n", hashed), "Invalid initial password hash")
+        # Mutable NixOS accounts preserve existing entries when first activated.
+        entries = f"root:!:1::::::\n{username}:{hashed.strip()}:1::::::\n"
+        shadow = root / "etc/shadow"
+        with open(shadow, "x", opener=lambda name, flags: os.open(name, flags, 0o600)) as file:
+            file.write(entries)
+
+        # Fold the WAL into the main database so the archive is self-contained.
+        database = root / "nix/var/nix/db/db.sqlite"
+        with closing(sqlite3.connect(database)) as db:
+            require(db.execute("PRAGMA journal_mode=DELETE").fetchone() == ("delete",),
+                    "could not finalize the Nix store database")
+        archive = scratch / f"nixos-zhiyu-{metadata['desktop']}-rootfs.tar"
+        archive.touch(mode=0o600, exist_ok=False)
+        command("tar", "--create", "--file", archive, "--directory", root,
+                "--sort=name", "--numeric-owner", "--owner=0", "--group=0", "--mtime=@1", ".")
     return archive, entries
 
 
@@ -100,6 +126,7 @@ def extract_root(archive, root):
     # can run as an unprivileged user on the CI worker.
     found = set()
     shadow_found = False
+    database_found = False
     with tarfile.open(archive, "r|") as stream:
         for entry in stream:
             path = entry.name.removeprefix("./")
@@ -111,24 +138,29 @@ def extract_root(archive, root):
                 require(not shadow_found and entry.isreg() and entry.mode == 0o600,
                         "invalid initial /etc/shadow archive entry")
                 shadow_found = True
+            if path == "nix/var/nix/db/db.sqlite":
+                require(not database_found and entry.isreg() and entry.size > 0,
+                        "invalid Nix store database archive entry")
+                database_found = True
+            require(path not in {"nix-path-registration", "nix/var/nix/db/db.sqlite-wal",
+                                 "nix/var/nix/db/db.sqlite-shm"}, f"unexpected archive member: {path}")
     require(found == set(required), "missing root filesystem directories")
     require(shadow_found, "missing initial /etc/shadow")
+    require(database_found, "missing Nix store database")
     command("tar", "-xf", archive, "--directory", root, "--same-permissions", "--no-same-owner")
     for directory, mode in required.items():
         require(stat.S_IMODE((root / directory).stat().st_mode) == mode, f"wrong extracted mode: {directory}")
 
 
-def verify_store(root, system, registration):
+def verify_store(root, system):
     isolated = "local?root=" + quote(str(root), safe="/")
-    with registration.open() as file:
-        command("nix-store", "--store", isolated, "--load-db", stdin=file)
     expected = set(output("nix-store", "--query", "--requisites", system).splitlines())
-    actual = set(output("nix-store", "--store", isolated, "--query", "--requisites", system).splitlines())
+    bin_dir = Path(system) / "sw/bin"
+    actual = set(output(bin_dir / "nix-store", "--store", isolated, "--query", "--requisites", system).splitlines())
     on_disk = {"/nix/store/" + p.name for p in (root / "nix/store").iterdir() if not p.name.startswith(".")}
     require(expected == actual == on_disk, "closure differs across host, archive and restored database")
-    # --load-db uses a validity export. Check NAR contents in the isolated
-    # store; the validity export itself does not represent cache signatures.
-    command("nix", "store", "verify", "--store", isolated, "--no-trust", "--recursive", system)
+    # Verify the installed store contents independently of substituter signatures.
+    command(bin_dir / "nix", "store", "verify", "--store", isolated, "--no-trust", "--recursive", system)
     return len(actual)
 
 
@@ -216,12 +248,13 @@ def verify(deployment, destination, source):
     lock = source / "config/flake.lock"
     require((metadata["bspRevision"], metadata["nixpkgsRevision"]) ==
             locked_revisions(json.loads(lock.read_text())), "runtime revision differs from flake.lock")
-    archive_source, = deployment.glob("nixos-zhiyu-*-rootfs.tar")
     images = deployment / "images"
     with TemporaryDirectory(prefix="zhiyu-deployment-") as tmp:
         scratch = Path(tmp)
+        # nixos-install requires every parent of --root to be searchable.
+        scratch.chmod(0o755)
         root = scratch / "root"
-        archive, shadow_entries = prepare_rootfs(archive_source, scratch, metadata["username"])
+        archive, shadow_entries = prepare_rootfs(deployment, source, scratch, metadata)
         extract_root(archive, root)
         profile = rooted(root, "/nix/var/nix/profiles/system")
         require(profile == rooted(root, system), "target profile does not resolve to the shipped generation")
@@ -248,7 +281,7 @@ def verify(deployment, destination, source):
         moddir = rooted(root, f"{system}/kernel-modules/lib/modules/{metadata['modDirVersion']}")
         require(any(moddir.rglob("*.ko*")), "kernel modules absent")
         require(set(p.name for p in moddir.parent.iterdir()) == {metadata["modDirVersion"]}, "unexpected module versions")
-        count = verify_store(root, system, root / "nix-path-registration")
+        count = verify_store(root, system)
         closure = set(output("nix-store", "--query", "--requisites", system).splitlines())
         require(metadata["zhiyuCameraPath"] in closure, "Zhiyu libcamera is missing from the runtime closure")
         require(metadata["upstreamCameraPath"] not in closure, "upstream libcamera remains in the runtime closure")
@@ -257,7 +290,7 @@ def verify(deployment, destination, source):
 
         destination.mkdir(parents=True)
         published_archive = destination / (archive.name + ".xz")
-        with published_archive.open("wb") as file:
+        with open(published_archive, "xb", opener=lambda name, flags: os.open(name, flags, 0o600)) as file:
             command("xz", "--threads=0", "--stdout", archive, stdout=file)
     for filename in hashes:
         shutil.copyfile(images / filename, destination / filename)

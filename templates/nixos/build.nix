@@ -5,7 +5,6 @@ let
   settings = builtins.fromJSON (builtins.readFile ./settings.json);
   specialArgs = {
     inherit
-      source
       nixpkgs
       zhiyu
       settings
@@ -21,14 +20,16 @@ let
         ];
       }
     else
-      flake.nixosConfigurations.zhiyu.extendModules {
+      flake.nixosConfigurations.${settings.hostname}.extendModules {
         inherit specialArgs;
         modules = [ ./deployment.nix ];
       };
   inherit (evaluated) config;
 in
 {
-  deployment = config.system.build.deployment;
+  deployment =
+    assert config.networking.hostName == settings.hostname;
+    config.system.build.deployment;
   inheritsRootMount =
     !(config.fileSystems ? "/") && !(builtins.any (mount: mount.where == "/") config.systemd.mounts);
 }

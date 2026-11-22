@@ -55,18 +55,21 @@ at first boot and preserves the password, including future changes made with
    checks both Boot IDs on Android userdata before stage 2. When adding a
    microSD rescue root to an existing installation, extract the rootfs to the
    card and keep the installed boot images.
-4. The first boot imports the tarball's Nix store registration records. The
-   selected desktop, user and hostname are already set in
+4. The archive includes a registered Nix store and the installed system profile.
+   The selected desktop, user and hostname are already set in
    `/etc/nixos/configuration.nix`. Edit this file for system changes. Both
    rebuild commands below use the same configuration and dependency versions.
 
    ```sh
-   # Flake entry point
-   sudo nixos-rebuild boot --flake /etc/nixos#zhiyu
+   # Auto-select the Flake configuration by hostname
+   sudo nixos-rebuild boot
 
    # Traditional entry point
-   sudo nixos-rebuild boot
+   sudo nixos-rebuild boot --no-flake
    ```
+
+   The generated Flake exports `nixosConfigurations.<hostname>`, using the
+   same build input as `networking.hostName`.
 
    Use the BSP's `zhiyu-install --expect-slot a|b GENERATION` with the resulting
    generation path and your actual slot. It supports `--dry-run`. Keep a
