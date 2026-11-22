@@ -292,9 +292,10 @@ EOF
 ch systemctl is-enabled NetworkManager bluetooth || true
 if [ -n "$DM_UNIT" ]; then
   ch systemctl is-enabled "$DM_UNIT.service"
-  dm_target=$(ch readlink -f /etc/systemd/system/display-manager.service)
-  if [ "${dm_target##*/}" != "$DM_UNIT.service" ]; then
-    echo "::error::display-manager.service points to $dm_target, expected $DM_UNIT.service"
+  dm_target=$(ch readlink -e /etc/systemd/system/display-manager.service)
+  expected_dm=$(ch readlink -e "/usr/lib/systemd/system/$DM_UNIT.service")
+  if [ "$dm_target" != "$expected_dm" ]; then
+    echo "::error::display-manager.service points to $dm_target, expected $expected_dm"
     exit 1
   fi
 fi
