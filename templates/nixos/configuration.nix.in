@@ -68,6 +68,5 @@ in
     };
   };
   environment.systemPackages = [ pkgs.git ];
-
 @DESKTOP@
 }

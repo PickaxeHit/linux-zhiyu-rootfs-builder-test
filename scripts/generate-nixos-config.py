@@ -12,7 +12,7 @@ DESKTOPS = {
     "minimal": (),
     "kde": ("audio", "kde"),
     "gnome": ("audio", "gnome"),
-    "plasmamobile": ("audio", "kde", "plasmamobile"),
+    "plasmamobile": ("audio", "plasmamobile"),
 }
 
 
