@@ -166,6 +166,18 @@ def verify_store(root, system):
     return len(actual)
 
 
+def verify_plasma_login(root, system):
+    daemon = rooted(root, f"{system}/sw/bin/plasmalogin")
+    libexec = daemon.parent.parent / "libexec"
+    helper_dir = "/" + libexec.relative_to(root).as_posix()
+    binary = daemon.with_name(".plasmalogin-wrapped")
+    # QProcess must exec the helper from the final, rewritten package.
+    require(helper_dir.encode() + b"\0" in binary.read_bytes(),
+            "Plasma Login Manager does not embed its packaged helper directory")
+    helper = rooted(root, f"{helper_dir}/plasmalogin-helper")
+    require(os.access(helper, os.X_OK), "Plasma Login Manager helper is not executable")
+
+
 def unpack_images(deployment, images, scratch, root, system):
     tool = deployment / "android-tools/bin"
     os.environ["PATH"] = f"{tool}:{os.environ['PATH']}"
@@ -285,6 +297,8 @@ def verify(deployment, destination, source):
         closure = set(output("nix-store", "--query", "--requisites", system).splitlines())
         require(metadata["zhiyuCameraPath"] in closure, "Zhiyu libcamera is missing from the runtime closure")
         require(metadata["upstreamCameraPath"] not in closure, "upstream libcamera remains in the runtime closure")
+        if metadata["desktop"] == "kde":
+            verify_plasma_login(root, system)
         hashes, kid, vid, cmdline, bootconfig = unpack_images(deployment, images, scratch, root, system)
         test_boot(deployment, root, system, cmdline, bootconfig, hashes)
 
