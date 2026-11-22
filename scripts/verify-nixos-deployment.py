@@ -75,7 +75,9 @@ def prepare_rootfs(deployment, source, scratch, metadata):
     require(re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", username) and username != "root",
             "Invalid initial username")
 
-    with TemporaryDirectory(prefix="zhiyu-install-", dir=scratch) as staging:
+    # nixos-install requires searchable parents. Runner TMPDIR can be under
+    # a private home, so put only the installation root under /tmp.
+    with TemporaryDirectory(prefix="zhiyu-install-", dir="/tmp") as staging:
         root = Path(staging)
         root.chmod(0o755)
         for name in ("dev", "proc", "sys", "run", "var", "home", "mnt", "root", "tmp", "etc", "etc/nixos"):
@@ -251,8 +253,6 @@ def verify(deployment, destination, source):
     images = deployment / "images"
     with TemporaryDirectory(prefix="zhiyu-deployment-") as tmp:
         scratch = Path(tmp)
-        # nixos-install requires every parent of --root to be searchable.
-        scratch.chmod(0o755)
         root = scratch / "root"
         archive, shadow_entries = prepare_rootfs(deployment, source, scratch, metadata)
         extract_root(archive, root)
