@@ -48,27 +48,26 @@ board=(
     linux-zhiyu-modules linux-zhiyu-headers linux-zhiyu-firmware
     linux-zhiyu-images zhiyu-sensord hexagonrpc sensh
 )
+# Select the Zhiyu provider before DNF resolves the desktop's camera
+# dependencies. The Fedora library and IPA RPMs own the same files.
+if [[ "$RELEASE" == rawhide ]]; then
+    camera=libcamera-zhiyu
+else
+    camera='libcamera-zhiyu-0.7.*'
+fi
 # Keep the translation files carried by RPMs in addition to the langpacks.
 rpm_config="$target/.zhiyu-rpm-config"
 install -d "$rpm_config/rpm"
 printf '%%_install_langs all\n' > "$rpm_config/rpm/macros"
-XDG_CONFIG_HOME="$rpm_config" dnf "${installroot[@]}" -y install \
+XDG_CONFIG_HOME="$rpm_config" dnf "${installroot[@]}" --exclude=libcamera,libcamera-ipa -y install \
     @core @standard gettext-runtime \
     fedora-release fedora-repos fedora-gpg-keys passwd \
     NetworkManager-wifi bluez wpa_supplicant \
     pipewire pipewire-alsa pipewire-pulseaudio wireplumber alsa-ucm \
     mesa-dri-drivers mesa-vulkan-drivers \
     qbootctl qmic qrtr \
-    "${board[@]}" "${desktop[@]}"
+    "${board[@]}" "$camera" "${desktop[@]}"
 
-# The repository carries both libcamera ABIs.  Rawhide follows the default
-# (currently 0.8); the stable releases pin 0.7, whose ABI their libcamera
-# consumers are built against.
-if [ "$RELEASE" = rawhide ]; then
-    XDG_CONFIG_HOME="$rpm_config" dnf "${installroot[@]}" -y install libcamera-zhiyu
-else
-    XDG_CONFIG_HOME="$rpm_config" dnf "${installroot[@]}" -y install 'libcamera-zhiyu-0.7.*'
-fi
 install -Dm644 "$rpm_config/rpm/macros" "$target/etc/rpm/macros.zhiyu-langpacks"
 rm "$rpm_config/rpm/macros"
 rmdir "$rpm_config/rpm" "$rpm_config"
@@ -134,7 +133,7 @@ if [[ -n "$display_manager" ]]; then
 else
     ch systemctl --root=/ set-default multi-user.target
 fi
-ch rpm -q "${board[@]}" mesa-dri-drivers mesa-vulkan-drivers \
+ch rpm -q "${board[@]}" libcamera-zhiyu mesa-dri-drivers mesa-vulkan-drivers \
     hostname gettext-runtime chrony zram-generator zram-generator-defaults qbootctl qmic qrtr
 
 umount -R "$target/dev"
