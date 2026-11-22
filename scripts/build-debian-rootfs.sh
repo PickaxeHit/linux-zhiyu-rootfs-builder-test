@@ -83,17 +83,30 @@ APPS="qbootctl
 # is what brings systemsettings, plasma-nm, plasma-pa, powerdevil and
 # kscreen.  Keeping --no-install-recommends for the rest of the list
 # keeps the support packages predictable.
+DM_UNIT=""
 case "$DESKTOP" in
-  kde) DESKTOP_PKGS="kde-standard" ;;
+  kde)
+    # kde-standard's Recommends can pull in SDDM. Resolve the greeter in
+    # the same APT transaction so only the chosen unit claims the alias.
+    if ch apt-cache show plasma-login-manager >/dev/null 2>&1; then
+      DESKTOP_PKGS="kde-standard plasma-login-manager sddm-"
+      DM_UNIT=plasmalogin
+    else
+      DESKTOP_PKGS="kde-standard sddm"
+      DM_UNIT=sddm
+    fi
+    ;;
   gnome)
     # gnome alone does not pull the Adwaita icon theme or Cantarell:
     # without them the shell has no symbolic icons (missing arrows,
     # missing panel icons) and falls back to an ugly font.
+    DM_UNIT=gdm3
     DESKTOP_PKGS="gnome gdm3 adwaita-icon-theme fonts-cantarell
                   fonts-dejavu-core gnome-themes-extra" ;;
   plasmamobile)
     # plasma-mobile pulls the shell and the mobile settings client;
     # the applications a tablet needs are listed explicitly.
+    DM_UNIT=sddm
     DESKTOP_PKGS="plasma-mobile sddm
                   angelfish dolphin konsole kate okular gwenview
                   ark kalk kclock discover
@@ -136,22 +149,9 @@ printf '%s:%s\n' "$USERNAME" "$PASSWORD" | ch chpasswd
 echo '%sudo ALL=(ALL:ALL) ALL' | sudo tee "$T/etc/sudoers.d/10-sudo" >/dev/null
 sudo chmod 440 "$T/etc/sudoers.d/10-sudo"
 ch systemctl enable NetworkManager bluetooth ssh
-case "$DESKTOP" in
-  kde|plasmamobile)
-    # Plasma Mobile installs SDDM above; KDE selects an available manager.
-    if [ "$DESKTOP" = plasmamobile ]; then
-      ch systemctl enable sddm
-    elif ch apt-cache show plasma-login-manager >/dev/null 2>&1; then
-      ch apt-get install -y --no-install-recommends plasma-login-manager
-      ch systemctl enable plasmalogin
-    else
-      # trixie has no plasma-login-manager; sddm is the fallback
-      ch apt-get install -y --no-install-recommends sddm
-      ch systemctl enable sddm
-    fi
-    ;;
-  gnome) ch systemctl enable gdm3 ;;
-esac
+if [ -n "$DM_UNIT" ]; then
+  ch systemctl enable "$DM_UNIT.service"
+fi
 
 # A 12.7 inch screen is not a handset: the Plasma Mobile session
 # script hardcodes the phone form factor, so ask for tablet.  Its
@@ -289,14 +289,15 @@ After=multi-user.target dev-disk-by\x2dpartlabel-boot_a.device dev-disk-by\x2dpa
 EOF
 
 # ---- 7. verify ----
-UNITS="NetworkManager bluetooth"
-case "$DESKTOP" in
-  kde) UNITS="$UNITS plasmalogin || true" ;;
-  plasmamobile) UNITS="$UNITS sddm" ;;
-  gnome) UNITS="$UNITS gdm3" ;;
-esac
-ch systemctl is-enabled $UNITS || true
-ch systemctl is-enabled display-manager 2>/dev/null || true
+ch systemctl is-enabled NetworkManager bluetooth || true
+if [ -n "$DM_UNIT" ]; then
+  ch systemctl is-enabled "$DM_UNIT.service"
+  dm_target=$(ch readlink -f /etc/systemd/system/display-manager.service)
+  if [ "${dm_target##*/}" != "$DM_UNIT.service" ]; then
+    echo "::error::display-manager.service points to $dm_target, expected $DM_UNIT.service"
+    exit 1
+  fi
+fi
 ch systemctl get-default
 ch dpkg-query -W --showformat='${Package} ${Version}\n' qbootctl qcom-va-driver mesa-libgallium 2>/dev/null || true
 # Debian's libva looks in /usr/lib/<triplet>/dri; find avoids the
