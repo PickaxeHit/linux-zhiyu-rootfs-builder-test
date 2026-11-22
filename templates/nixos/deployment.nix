@@ -36,7 +36,7 @@ let
     extraCommands = pkgs.writeShellScript "zhiyu-rootfs-layout" ''
       set -euo pipefail
       install -d -m 0755 dev proc sys run var home mnt etc/nixos nix/var/nix/profiles
-      install -d -m 0700 root var/lib/zhiyu
+      install -d -m 0700 root
       install -d -m 1777 tmp
       install -m 0644 /dev/null etc/NIXOS
       install -m 0644 ${source}/{configuration.nix,flake.nix,flake.lock} etc/nixos/

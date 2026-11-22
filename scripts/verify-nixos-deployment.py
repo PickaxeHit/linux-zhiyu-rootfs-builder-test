@@ -66,22 +66,27 @@ def rooted(root, path):
     return result
 
 
-def prepare_rootfs(source, scratch):
+def prepare_rootfs(source, scratch, username):
     password = os.environ.pop("PASSWORD", "") or "changeme"
     require(not any(character in password for character in "\r\n\0"), "Password must be a single line")
     hashed = command("openssl", "passwd", "-6", "-stdin", input=password + "\n",
                      stdout=subprocess.PIPE).stdout
     require(re.fullmatch(r"\$6\$[^\n]+\n", hashed), "Invalid initial password hash")
-    member = Path("var/lib/zhiyu/initial-password.hash")
-    seed = scratch / member
-    seed.parent.mkdir(parents=True)
-    with open(seed, "x", opener=lambda name, flags: os.open(name, flags, 0o600)) as file:
-        file.write(hashed)
+    # NixOS creates /etc/passwd and /etc/group at first activation, while
+    # mutable users keep matching entries already present in /etc/shadow.
+    require(re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", username) and username != "root",
+            "Invalid initial username")
+    member = Path("etc/shadow")
+    shadow = scratch / member
+    shadow.parent.mkdir()
+    entries = f"root:!:1::::::\n{username}:{hashed.strip()}:1::::::\n"
+    with open(shadow, "x", opener=lambda name, flags: os.open(name, flags, 0o600)) as file:
+        file.write(entries)
     archive = scratch / source.name
     shutil.copyfile(source, archive)
     command("tar", "--append", "--file", archive, "--directory", scratch,
             "--owner=0", "--group=0", "--mtime=@1", member)
-    return archive, hashed
+    return archive, entries
 
 
 def extract_root(archive, root):
@@ -89,11 +94,12 @@ def extract_root(archive, root):
     required = {
         "dev": 0o755, "proc": 0o755, "sys": 0o755, "run": 0o755,
         "etc": 0o755, "var": 0o755, "tmp": 0o1777, "root": 0o700,
-        "nix/var/nix/profiles": 0o755, "var/lib/zhiyu": 0o700,
+        "nix/var/nix/profiles": 0o755,
     }
     # Read the archive's numeric metadata separately from extraction, which
     # can run as an unprivileged user on the CI worker.
     found = set()
+    shadow_found = False
     with tarfile.open(archive, "r|") as stream:
         for entry in stream:
             path = entry.name.removeprefix("./")
@@ -101,7 +107,12 @@ def extract_root(archive, root):
             if path in required:
                 require(entry.isdir() and entry.mode == required[path], f"bad permissions on {path}")
                 found.add(path)
+            if path == "etc/shadow":
+                require(not shadow_found and entry.isreg() and entry.mode == 0o600,
+                        "invalid initial /etc/shadow archive entry")
+                shadow_found = True
     require(found == set(required), "missing root filesystem directories")
+    require(shadow_found, "missing initial /etc/shadow")
     command("tar", "-xf", archive, "--directory", root, "--same-permissions", "--no-same-owner")
     for directory, mode in required.items():
         require(stat.S_IMODE((root / directory).stat().st_mode) == mode, f"wrong extracted mode: {directory}")
@@ -210,7 +221,7 @@ def verify(deployment, destination, source):
     with TemporaryDirectory(prefix="zhiyu-deployment-") as tmp:
         scratch = Path(tmp)
         root = scratch / "root"
-        archive, password_hash = prepare_rootfs(archive_source, scratch)
+        archive, shadow_entries = prepare_rootfs(archive_source, scratch, metadata["username"])
         extract_root(archive, root)
         profile = rooted(root, "/nix/var/nix/profiles/system")
         require(profile == rooted(root, system), "target profile does not resolve to the shipped generation")
@@ -231,10 +242,9 @@ def verify(deployment, destination, source):
         settings = json.loads((source / "settings.json").read_text())
         require(all(metadata[key] == value for key, value in settings.items()),
                 "deployed configuration settings differ")
-        seed = root / "var/lib/zhiyu/initial-password.hash"
-        require(seed.is_file() and stat.S_IMODE(seed.stat().st_mode) == 0o600,
-                "initial password hash must be a private file")
-        require(seed.read_text() == password_hash, "initial password hash differs")
+        shadow = root / "etc/shadow"
+        require(stat.S_IMODE(shadow.stat().st_mode) == 0o600, "initial /etc/shadow must be private")
+        require(shadow.read_text() == shadow_entries, "initial /etc/shadow entries differ")
         moddir = rooted(root, f"{system}/kernel-modules/lib/modules/{metadata['modDirVersion']}")
         require(any(moddir.rglob("*.ko*")), "kernel modules absent")
         require(set(p.name for p in moddir.parent.iterdir()) == {metadata["modDirVersion"]}, "unexpected module versions")

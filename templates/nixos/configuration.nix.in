@@ -44,7 +44,8 @@ in
   ];
   nix.settings.nix-path = config.nix.nixPath;
 
-  # Read the initial hash from the deployed filesystem during activation.
+  # Preserve the password initialized in /etc/shadow when the system activates.
+  users.mutableUsers = true;
   users.users = {
     root.hashedPassword = "!";
     @USERNAME@ = {
@@ -55,7 +56,6 @@ in
         "video"
       ];
       initialHashedPassword = "!";
-      hashedPasswordFile = "/var/lib/zhiyu/initial-password.hash";
     };
   };
   services.openssh = {

@@ -33,8 +33,10 @@ already loaded by the device. All rootfs workflows upload their results as
 Actions artifacts. The initial username is
 `username`, and the initial password is `changeme` unless a different workflow input
 or the `ROOTFS_PASSWORD` repository secret is set. The secret takes precedence.
-NixOS defaults to hostname `nixos`. Its password hash is added to the rootfs during
-packaging and is kept out of the Nix store and the manifest.
+NixOS defaults to hostname `nixos`. Packaging writes the initial password hash
+to the rootfs's `/etc/shadow` outside the Nix store. NixOS creates the accounts
+at first boot and preserves the password, including future changes made with
+`passwd`.
 
 ## Deploy a matched set
 
