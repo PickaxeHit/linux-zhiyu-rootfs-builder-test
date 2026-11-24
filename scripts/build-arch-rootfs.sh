@@ -180,7 +180,8 @@ bc bash -c 'ls -l /var/tmp/pkgs/*.pkg.tar.zst'
 # Everything above "base" (desktop, audio, fonts, NetworkManager) is
 # installed in the chroot below, where the package scriptlets run
 # against a root owned target and systemd tooling works.
-PKGS=(base base-devel archlinux-keyring git bash zsh openssh vim)
+# sensh is built in bootstrap but runs in target; keep its protobuf-c runtime here.
+PKGS=(base base-devel archlinux-keyring git bash zsh openssh vim protobuf-c)
 
 # Use bootstrap repository configuration and trust for the initial transaction.
 bc pacstrap -P /mnt/target "${PKGS[@]}"
@@ -245,6 +246,15 @@ sudo install -Dm755 "$B/home/builder/sensh-src/build/sensh" "$T/usr/local/bin/se
 sudo install -Dm755 "$B/usr/bin/qrtr-lookup" "$T/usr/bin/qrtr-lookup"
 sudo cp -a "$B"/usr/lib/libqrtr.so* "$T/usr/lib/"
 sudo ldconfig -r "$T"
+# Fail here, before downloading the desktop, if the copied sensor stack is incomplete.
+c bash -ec '
+  for binary in /usr/local/bin/sensh /usr/bin/hexagonrpcd /usr/bin/qrtr-lookup; do
+    test -x "$binary"
+    deps=$(ldd "$binary")
+    printf "%s\\n%s\\n" "$binary" "$deps"
+    if grep -q "not found" <<< "$deps"; then exit 1; fi
+  done
+'
 # The daemons run as an unprivileged fastrpc user that owns the
 # fastrpc device nodes and the SNS registry.
 sudo install -Dm644 /dev/stdin "$T/usr/lib/sysusers.d/fastrpc.conf" >/dev/null <<'EOF'
