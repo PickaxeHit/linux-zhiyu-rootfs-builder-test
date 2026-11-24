@@ -92,7 +92,7 @@ To deliberately update an installed system's BSP and its nixpkgs input, run
 entry point. That also updates the traditional entry point's nixpkgs path
 for subsequent rebuilds.
 
-CI keeps the official Nix cache enabled. In the test repository, set the Actions
+CI keeps the official Nix cache enabled. In the builder repository, set the Actions
 variable `ZHIYU_BSP_CACHE_PUBLIC_KEY` to the BSP cache's public key to enable
 its signed [package Release cache](https://github.com/PickaxeHit/linux-zhiyu-pkgs/releases/tag/nix-cache-index). The deployment does not publish its NixOS
 store closure to the BSP cache.
