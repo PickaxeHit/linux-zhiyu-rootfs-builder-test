@@ -1,0 +1,87 @@
+name: Build Rootfs (Void Linux)
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/void-builder.yml'
+      - 'scripts/build-void-rootfs.sh'
+      - 'scripts/void-public-key.py'
+  workflow_dispatch:
+    inputs:
+      desktop:
+        description: Desktop environment
+        type: choice
+        options: [kde, gnome, none]
+        default: kde
+      username:
+        description: Initial username
+        type: string
+        default: username
+      password:
+        description: Initial password (overridden by ROOTFS_PASSWORD)
+        type: string
+        default: changeme
+      shell:
+        description: Login shell
+        type: choice
+        options: [zsh, bash]
+        default: zsh
+      hostname:
+        description: System hostname
+        type: string
+        default: void
+      package_repository:
+        description: GitHub repository providing the signed XBPS channel
+        type: string
+        default: PickaxeHit/linux-zhiyu-nix
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build rootfs (ARM64 glibc)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate public key and build script
+        env:
+          ZHIYU_BSP_VOID_PUBLIC_KEY: ${{ vars.ZHIYU_BSP_VOID_PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+          : "${ZHIYU_BSP_VOID_PUBLIC_KEY:?Set Actions variable ZHIYU_BSP_VOID_PUBLIC_KEY to the BSP RSA public key}"
+          bash -n scripts/build-void-rootfs.sh
+          python3 scripts/void-public-key.py "$RUNNER_TEMP/void-keys"
+      - name: Build and package the rootfs
+        env:
+          DESKTOP: ${{ inputs.desktop || 'none' }}
+          USERNAME: ${{ inputs.username || 'username' }}
+          PASSWORD: ${{ secrets.ROOTFS_PASSWORD || inputs.password || 'changeme' }}
+          LOGIN_SHELL: ${{ inputs.shell || 'zsh' }}
+          HOST_NAME: ${{ inputs.hostname || 'void' }}
+          PACKAGE_REPOSITORY: ${{ inputs.package_repository || 'PickaxeHit/linux-zhiyu-nix' }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$PASSWORD"
+          docker run --rm --privileged --platform linux/arm64 \
+            -e DESKTOP -e USERNAME -e PASSWORD -e LOGIN_SHELL -e HOST_NAME -e PACKAGE_REPOSITORY \
+            -v "$PWD:/work" -v "$RUNNER_TEMP/void-keys:/bsp-keys:ro" -w /work \
+            --entrypoint /bin/sh ghcr.io/void-linux/void-glibc-full:latest -ec '
+              xbps-install -Suy xbps
+              xbps-install -Suy
+              xbps-install -y bash curl ca-certificates meson ninja gcc glibc-devel linux-headers pkgconf xz tar util-linux
+              exec bash scripts/build-void-rootfs.sh
+            '
+      - uses: actions/upload-artifact@v4
+        with:
+          name: void-aarch64-${{ inputs.desktop || 'none' }}-rootfs
+          path: |
+            void-aarch64-*-rootfs.tar.xz
+            void-aarch64-*-rootfs.tar.xz.sha256
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 7

@@ -1,6 +1,6 @@
 # Zhiyu Rootfs Builder
 
-The Debian, Arch Linux Port (AArch64) and Fedora workflows produce standalone root filesystems.
+The Debian, Arch Linux Port (AArch64), Fedora and experimental Void Linux workflows produce standalone root filesystems.
 Their device packages come from the [Zhiyu package repository](https://github.com/PickaxeHit/linux-zhiyu-pkgs/releases).
 The NixOS deployment workflow builds a root filesystem and its four paired Android
 boot images from a single generated NixOS configuration. Download them together
@@ -109,3 +109,11 @@ The Arch workflow uses the community [drzee.net AArch64 port](https://ports.arch
 The bootstrap signature is verified with the Port public key and its published long key ID `0CF25682E6BA0751`. For stronger trust pinning, set the repository Actions variable `ARCH_PORT_KEY_FINGERPRINT` to the full independently verified 40-hex fingerprint. The target uses the Port repos and its own initialized pacman keyring. The existing Zhiyu pacman repository is unchanged and still contains packages built on ALARM; the builder checks the camera version series and shared-library dependencies, but these checks do not establish full ABI compatibility. Rebuild the BSP against Port before declaring production support.
 
 Artifacts are named `arch-aarch64-<desktop>-rootfs.tar.xz`.
+
+## Void Linux (experimental, aarch64 glibc)
+
+Use **Build Rootfs (Void Linux)** in Actions. KDE Plasma (SDDM), GNOME (GDM) and a command-line-only system are available. Changes to the Void workflow/scripts automatically run a command-line-only build; manual builds default to KDE. Plasma Mobile is not offered because the complete upstream package set was not found in Void.
+
+Set the repository Actions variable `ZHIYU_BSP_VOID_PUBLIC_KEY` to the PEM public key from the BSP signing key, e.g. `openssl pkey -in void-repo-key.pem -pubout`. The workflow derives the XBPS fingerprint and installs the public-key plist before syncing the signed repository. It does not download or accept an untrusted signing key. The default BSP repository is the test channel `PickaxeHit/linux-zhiyu-nix` at `releases/download/repo-xbps/`. The build uses the official Void aarch64 repository, installs the BSP packages with XBPS, and compiles qbootctl from a pinned upstream commit as a local XBPS package. Runit services are enabled in the persistent default runsvdir; PipeWire is started in the desktop session. No boot partitions are written during the build.
+
+Artifacts: `void-aarch64-<desktop>-rootfs.tar.xz` and its SHA-256 checksum. Use the matching BSP boot images. Rootfs boot, display, camera, audio and suspend still need real device validation.
