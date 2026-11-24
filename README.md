@@ -1,6 +1,6 @@
 # Zhiyu Rootfs Builder
 
-The Debian, Arch Linux ARM and Fedora workflows produce standalone root filesystems.
+The Debian, Arch Linux Port (AArch64) and Fedora workflows produce standalone root filesystems.
 Their device packages come from the [Zhiyu package repository](https://github.com/PickaxeHit/linux-zhiyu-pkgs/releases).
 The NixOS deployment workflow builds a root filesystem and its four paired Android
 boot images from a single generated NixOS configuration. Download them together
@@ -101,3 +101,11 @@ The BSP NixOS module uses `system.replaceDependencies` to substitute the
 ABI-matched Zhiyu libcamera in the assembled runtime closure. PipeWire and
 other consumers retain their upstream derivations so they can use the official
 cache. Nix handles substitution during the deployment build.
+
+## Arch Linux Port (AArch64)
+
+The Arch workflow uses the community [drzee.net AArch64 port](https://ports.archlinux.page/aarch64/) (ARMv8.2+), not ALARM. It selects the newest dated signed bootstrap by default; set `bootstrap_date` to `YYYY.MM.DD` to override. The bootstrap date does not pin the rolling package repositories.
+
+The bootstrap signature is verified with the Port public key and its published long key ID `0CF25682E6BA0751`. For stronger trust pinning, set the repository Actions variable `ARCH_PORT_KEY_FINGERPRINT` to the full independently verified 40-hex fingerprint. The target uses the Port repos and its own initialized pacman keyring. The existing Zhiyu pacman repository is unchanged and still contains packages built on ALARM; the builder checks the camera version series and shared-library dependencies, but these checks do not establish full ABI compatibility. Rebuild the BSP against Port before declaring production support.
+
+Artifacts are named `arch-aarch64-<desktop>-rootfs.tar.xz`.

@@ -1,7 +1,24 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
-TARBALL_URL=http://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz
+PORT_REPO=https://arch-linux-repo.drzee.net/arch
+BOOTSTRAP_DIR=$PORT_REPO/tarballs/os/aarch64
+PORT_KEY_URL=$PORT_REPO/extra/os/aarch64/public.key
+# Published long key ID; optionally pin the full independently verified fingerprint.
+PORT_KEY_ID=0CF25682E6BA0751
+PORT_KEY_FINGERPRINT=${ARCH_PORT_KEY_FINGERPRINT:-}
+if [[ -n "$PORT_KEY_FINGERPRINT" && ! "$PORT_KEY_FINGERPRINT" =~ ^[[:xdigit:]]{40}$ ]]; then
+  echo 'ARCH_PORT_KEY_FINGERPRINT must be a full 40-hex fingerprint' >&2; exit 1
+fi
+# Accept a dated bootstrap override; otherwise choose the newest dated archive.
+if [[ -n "${ARCH_PORT_BOOTSTRAP_DATE:-}" ]]; then
+  [[ "$ARCH_PORT_BOOTSTRAP_DATE" =~ ^[0-9]{4}\.[0-9]{2}\.[0-9]{2}$ ]] || { echo 'Invalid bootstrap date' >&2; exit 1; }
+  F="archlinux-bootstrap-${ARCH_PORT_BOOTSTRAP_DATE}-aarch64.tar.zst"
+else
+  F=$(curl -fsSL --retry 3 "$BOOTSTRAP_DIR/" | grep -oE 'archlinux-bootstrap-[0-9]{4}\.[0-9]{2}\.[0-9]{2}-aarch64\.tar\.zst' | LC_ALL=C sort -u | tail -n1)
+  [[ -n "$F" ]] || { echo 'No dated Arch Port bootstrap found' >&2; exit 1; }
+fi
+TARBALL_URL=$BOOTSTRAP_DIR/$F
 # Pinned qcom-va-driver: the VA-API backend for Qualcomm Iris, installed as
 # /usr/lib/dri/qcom_drv_video.so together with the msm and v4l2 aliases.  It
 # is built as a package in the bootstrap (that is aarch64 already), so the
@@ -22,7 +39,7 @@ if ! [[ "$PACKAGE_REPOSITORY" =~ ^[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9_.-]+$ ]] |
 fi
 PACKAGE_REPO_BASE="https://github.com/$PACKAGE_REPOSITORY/releases/download/repo-pacman"
 
-B="$PWD/bootstrap"   # temporary "live CD" made from the ALARM tarball
+B="$PWD/bootstrap"   # temporary Arch Port bootstrap environment
 T="$PWD/target"      # the new system, installed with pacstrap
 mkdir -p "$B" "$T"
 
@@ -34,16 +51,29 @@ mkdir -p "$B" "$T"
 # with / owned by 1001, /tmp/.X11-unix never created and no Xwayland.
 sudo chown root:root "$B" "$T"
 
-# ---- 1. bootstrap environment from the official tarball ----
-F="$(basename "$TARBALL_URL")"
-curl -fL --retry 3 -O "$TARBALL_URL"
-curl -fL --retry 3 -O "$TARBALL_URL.md5"
-md5sum -c "$F.md5"
-sudo bsdtar -xpf "$F" -C "$B" --numeric-owner
-rm -f "$F" "$F.md5"
-
-cleanup() { sudo umount -R "$B" 2>/dev/null || sudo umount -Rl "$B" || true; }
+# ---- 1. verify and extract the Arch Port bootstrap ----
+download=$(mktemp -d)
+cleanup() {
+  sudo umount -R "$B" 2>/dev/null || sudo umount -Rl "$B" || true
+  rm -rf "$download"
+}
 trap cleanup EXIT
+mkdir -m 700 "$download/gnupg"
+curl -fsSL --retry 3 "$PORT_KEY_URL" -o "$download/port.key"
+curl -fsSL --retry 3 "$TARBALL_URL" -o "$download/$F"
+curl -fsSL --retry 3 "$TARBALL_URL.sig" -o "$download/$F.sig"
+key_info=$(gpg --batch --homedir "$download/gnupg" --with-colons --show-keys "$download/port.key")
+[[ $(awk -F: '$1=="pub" {n++} END {print n+0}' <<< "$key_info") == 1 ]] || { echo 'Expected exactly one Port public key' >&2; exit 1; }
+fingerprint=$(awk -F: '$1=="fpr" {print $10; exit}' <<< "$key_info")
+[[ "$fingerprint" =~ ^[[:xdigit:]]{40}$ && "$fingerprint" == *"$PORT_KEY_ID" ]] || { echo "Unexpected Port signing key: $fingerprint" >&2; exit 1; }
+if [[ -n "$PORT_KEY_FINGERPRINT" && "$fingerprint" != "${PORT_KEY_FINGERPRINT^^}" ]]; then
+  echo 'Port signing key fingerprint mismatch' >&2; exit 1
+fi
+echo "Arch Port bootstrap: $TARBALL_URL; signing key: $fingerprint"
+gpg --batch --homedir "$download/gnupg" --import "$download/port.key"
+gpg --batch --homedir "$download/gnupg" --verify "$download/$F.sig" "$download/$F"
+sudo bsdtar -xpf "$download/$F" -C "$B" --numeric-owner --strip-components=1
+rm -f "$download/$F" "$download/$F.sig"
 sudo mkdir -p "$B/mnt/target"
 sudo mount --bind "$B" "$B"
 sudo mount -t proc proc "$B/proc"
@@ -64,7 +94,17 @@ if bc pacman -V | grep -qE 'Pacman v([7-9]|[1-9][0-9])\.'; then
   bc sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf
 fi
 bc pacman-key --init
-bc pacman-key --populate archlinuxarm
+bc pacman-key --populate archlinux
+sudo install -m 644 "$download/port.key" "$B/tmp/arch-port.key"
+bc pacman-key --add /tmp/arch-port.key
+bc pacman-key --lsign-key "$fingerprint"
+# Keep upstream package signatures mandatory; the Port databases may be unsigned.
+bc pacman-conf --repo-list | grep -Fx core
+bc pacman-conf --repo-list | grep -Fx extra
+bc pacman-conf --repo-list | grep -Fx forge
+if bc pacman-conf --repo-list | grep -Eq '^(alarm|aur)$'; then
+  echo 'Unexpected ALARM repository in bootstrap' >&2; exit 1
+fi
 bc pacman -Syu --noconfirm
 # protobuf-c is what sensh links against; qmic/qrtr are built below
 bc pacman -S --needed --noconfirm arch-install-scripts base-devel git meson ninja pkgconf curl protobuf-c
@@ -124,9 +164,20 @@ bc bash -c 'ls -l /var/tmp/pkgs/*.pkg.tar.zst'
 # Everything above "base" (desktop, audio, fonts, NetworkManager) is
 # installed in the chroot below, where the package scriptlets run
 # against a root owned target and systemd tooling works.
-PKGS=(base base-devel archlinuxarm-keyring git bash zsh openssh vim)
+PKGS=(base base-devel archlinux-keyring git bash zsh openssh vim)
 
-bc pacstrap -K /mnt/target "${PKGS[@]}"
+# Use bootstrap repository configuration and trust for the initial transaction.
+bc pacstrap -P /mnt/target "${PKGS[@]}"
+# Create a separate target keyring rather than distributing the bootstrap private key.
+c gpgconf --homedir /etc/pacman.d/gnupg --kill all || true
+sudo rm -rf "$T/etc/pacman.d/gnupg"
+c pacman-key --init
+c pacman-key --populate archlinux
+sudo install -m 644 "$download/port.key" "$T/var/tmp/arch-port.key"
+c pacman-key --add /var/tmp/arch-port.key
+c pacman-key --lsign-key "$fingerprint"
+sudo rm -f "$T/var/tmp/arch-port.key"
+c pacman-conf --repo-list
 
 # Copy the packages built in the bootstrap into the new system.
 bc bash -c 'cp /var/tmp/pkgs/*.pkg.tar.zst /mnt/target/var/tmp/'
@@ -189,7 +240,7 @@ EOF
 # The runner has no systemd-sysusers; the target does.
 c systemd-sysusers
 c install -d -o fastrpc -g fastrpc -m 755 /usr/share/qcom/sensors/registry
-sudo sed -i '/^DisableSandbox$/d' "$T/etc/pacman.conf"
+
 sudo rm -f "$T"/var/tmp/*.pkg.tar.zst
 c test -x /usr/bin/qbootctl
 c test -f /usr/lib/dri/qcom_drv_video.so
@@ -212,11 +263,7 @@ case "$DESKTOP" in
            kde-network-meta kde-system-meta kde-utilities-meta)
     DM=plasmalogin ;;
   gnome)
-    # Install the desktop pieces instead of the "gnome" group: the
-    # group still contains gnome-boxes and gnome-books, whose
-    # webkit2gtk dependency ALARM no longer carries, and
-    # "--ignore" does not help (pacman then asks "is in
-    # IgnorePkg, install anyway? [Y/n]" and --noconfirm answers Y).
+    # Keep the existing tablet-oriented GNOME selection, not the entire group.
     APPS+=(gnome-shell gnome-session gnome-settings-daemon
            gnome-control-center gnome-keyring gnome-backgrounds
            gnome-themes-extra gnome-disk-utility gnome-system-monitor
@@ -277,10 +324,17 @@ SigLevel = Never
 Server = $PACKAGE_REPO_BASE
 EOF
 c pacman -Sy --noconfirm
-# The Arch repository only carries the 0.7 libcamera ABI: pacman has no solver
-# that would hold a package back, so a 0.8 upgrade would either abort -Syu or
-# break the binaries that link against it.
-c pacman -S --needed --noconfirm --ask=4 \
+# The BSP packages are currently built on ALARM. Reject obvious libcamera
+# ABI mismatches before replacing the upstream library (not a full ABI proof).
+camera_abi() {
+  c env LC_ALL=C pacman -Si "$1" | awk '/^Version[[:space:]]*:/ {v=$3; sub(/^[0-9]+:/,"",v); if (match(v,/^[0-9]+\.[0-9]+/)) print substr(v,RSTART,RLENGTH); exit}'
+}
+upstream_abi=$(camera_abi libcamera)
+bsp_abi=$(camera_abi zhiyu/libcamera-zhiyu)
+echo "libcamera ABI series: Port=$upstream_abi Zhiyu=$bsp_abi"
+[[ -n "$upstream_abi" && "$upstream_abi" == "$bsp_abi" ]] || { echo 'Rebuild the Zhiyu camera package for the Port ABI before proceeding' >&2; exit 1; }
+# Complete a full upgrade together with the BSP installation.
+c pacman -Su --needed --noconfirm --ask=4 \
   linux-zhiyu-modules linux-zhiyu-headers linux-zhiyu-firmware \
   libcamera-zhiyu zhiyu-sensord linux-zhiyu-images
 c systemctl enable zhiyu-sensord
@@ -368,11 +422,22 @@ c getent group wheel
 c systemctl get-default
 echo "--- packages that matter:"
 c pacman -Qq qbootctl qcom-va-driver
+# Check dynamic dependencies of the board-specific programs and camera libs.
+c bash -ec '
+  shopt -s nullglob
+  for f in /usr/bin/qbootctl /usr/bin/zhiyu-sensord /usr/local/bin/sensh /usr/lib/dri/qcom_drv_video.so /usr/lib/libcamera*.so*; do
+    [[ -f "$f" ]] || { echo "Missing $f" >&2; exit 1; }
+    deps=$(ldd "$f" 2>&1) || { echo "$deps" >&2; exit 1; }
+    printf "%s\n%s\n" "$f" "$deps"
+    if grep -q "not found" <<< "$deps"; then exit 1; fi
+  done
+'
 ls -l "$T/usr/lib/dri/" | grep -E 'qcom|msm|v4l2'
 echo "--- ownership:"
 stat -c '%u:%g %n' "$T" "$T/etc" "$T/tmp"
 
 # ---- 7. cleanup ----
+sudo sed -i '/^DisableSandbox$/d' "$T/etc/pacman.conf"
 c gpgconf --homedir /etc/pacman.d/gnupg --kill all || true
 sudo rm -rf "$T"/var/cache/pacman/pkg/* "$T"/var/log/pacman.log
 sudo rm -f "$T/etc/resolv.conf"
@@ -384,7 +449,7 @@ trap - EXIT
 sudo du -sh "$T"
 
 # Pack the finished rootfs.
-OUT="alarm-aarch64-${DESKTOP}-rootfs.tar.xz"
+OUT="arch-aarch64-${DESKTOP}-rootfs.tar.xz"
 # The top level "." entry must be root owned in the archive too: a
 # non-root owned "/" makes systemd-tmpfiles abort at boot.
 sudo chown root:root target

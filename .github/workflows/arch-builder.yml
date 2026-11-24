@@ -1,4 +1,4 @@
-name: Build Rootfs (Arch Linux ARM)
+name: Build Rootfs (Arch Linux Port)
 
 on:
   workflow_dispatch:
@@ -24,7 +24,11 @@ on:
       hostname:
         description: System hostname
         type: string
-        default: alarm
+        default: arch
+      bootstrap_date:
+        description: Arch Port bootstrap date (YYYY.MM.DD; empty selects newest)
+        type: string
+        default: ''
       package_repository:
         description: GitHub repository providing Zhiyu packages (owner/repo)
         type: string
@@ -40,13 +44,15 @@ jobs:
         run: |
           sudo rm -rf /usr/share/dotnet /opt/hostedtoolcache /usr/local/lib/android || true
           sudo apt-get update
-          sudo apt-get install -y libarchive-tools zstd
+          sudo apt-get install -y libarchive-tools zstd gnupg
           df -h /
 
       - uses: actions/checkout@v4
 
       - name: Build and package the rootfs
         env:
+          ARCH_PORT_BOOTSTRAP_DATE: ${{ inputs.bootstrap_date }}
+          ARCH_PORT_KEY_FINGERPRINT: ${{ vars.ARCH_PORT_KEY_FINGERPRINT }}
           DESKTOP: ${{ inputs.desktop }}
           USERNAME: ${{ inputs.username }}
           PASSWORD: ${{ secrets.ROOTFS_PASSWORD || inputs.password }}
@@ -55,13 +61,13 @@ jobs:
           PACKAGE_REPOSITORY: ${{ inputs.package_repository }}
         run: |
           echo "::add-mask::$PASSWORD"
-          bash scripts/build-alarm-rootfs.sh
+          bash scripts/build-arch-rootfs.sh
 
       - uses: actions/upload-artifact@v4
         with:
-          name: alarm-aarch64-${{ inputs.desktop }}-rootfs
+          name: arch-aarch64-${{ inputs.desktop }}-rootfs
           path: |
-            alarm-aarch64-*-rootfs.tar.xz
-            alarm-aarch64-*-rootfs.tar.xz.sha256
+            arch-aarch64-*-rootfs.tar.xz
+            arch-aarch64-*-rootfs.tar.xz.sha256
           compression-level: 0
           retention-days: 7
