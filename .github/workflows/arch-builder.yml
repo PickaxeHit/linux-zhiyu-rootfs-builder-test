@@ -61,6 +61,7 @@ jobs:
           PACKAGE_REPOSITORY: ${{ inputs.package_repository }}
         run: |
           echo "::add-mask::$PASSWORD"
+          bash -n scripts/build-arch-rootfs.sh
           bash scripts/build-arch-rootfs.sh
 
       - uses: actions/upload-artifact@v4

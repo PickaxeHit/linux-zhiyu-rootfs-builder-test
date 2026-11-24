@@ -89,7 +89,23 @@ bc() { sudo chroot "$B" /usr/bin/env -i HOME=/root TERM=dumb \
          PATH=/usr/local/bin:/usr/bin LANG=C "$@"; }
 c()  { bc arch-chroot /mnt/target "$@"; }   # run inside the new system
 
-bc sed -i 's/^CheckSpace/#CheckSpace/' /etc/pacman.conf
+# Explicit repositories and signature policy; never inherit ALARM or unsigned Port packages.
+sudo tee "$B/etc/pacman.conf" >/dev/null <<'EOF'
+[options]
+Architecture = auto
+SigLevel = Required DatabaseOptional
+LocalFileSigLevel = Optional
+ParallelDownloads = 5
+
+[core]
+Server = https://arch-linux-repo.drzee.net/arch/$repo/os/$arch
+
+[extra]
+Server = https://arch-linux-repo.drzee.net/arch/$repo/os/$arch
+
+[forge]
+Server = https://arch-linux-repo.drzee.net/arch/$repo/os/$arch
+EOF
 if bc pacman -V | grep -qE 'Pacman v([7-9]|[1-9][0-9])\.'; then
   bc sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf
 fi
@@ -425,7 +441,11 @@ c pacman -Qq qbootctl qcom-va-driver
 # Check dynamic dependencies of the board-specific programs and camera libs.
 c bash -ec '
   shopt -s nullglob
-  for f in /usr/bin/qbootctl /usr/bin/zhiyu-sensord /usr/local/bin/sensh /usr/lib/dri/qcom_drv_video.so /usr/lib/libcamera*.so*; do
+  camera_libs=(/usr/lib/libcamera.so.*)
+  ((${#camera_libs[@]})) || { echo "No libcamera shared library installed" >&2; exit 1; }
+  for f in /usr/bin/qbootctl /usr/bin/zhiyu-sensord /usr/local/bin/sensh /usr/lib/dri/qcom_drv_video.so /usr/lib/libcamera*.so* /usr/lib/spa-0.2/libcamera/*.so /usr/lib/gstreamer-1.0/libgstlibcamera.so; do
+    # GStreamer plugin is optional when not installed by the chosen desktop.
+    [[ "$f" != /usr/lib/gstreamer-1.0/libgstlibcamera.so || -f "$f" ]] || continue
     [[ -f "$f" ]] || { echo "Missing $f" >&2; exit 1; }
     deps=$(ldd "$f" 2>&1) || { echo "$deps" >&2; exit 1; }
     printf "%s\n%s\n" "$f" "$deps"
