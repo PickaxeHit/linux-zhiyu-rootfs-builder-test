@@ -150,8 +150,13 @@ for f in "${camera[@]}"; do ch "$loader" --list "${f#"$T"}"; done
 echo "--- XBPS cache before cleanup:"
 du -sh "$T/var/cache/xbps"
 ch xbps-remove -OO
+# XBPS may leave detached signatures or other files behind. The target
+# cache is disposable; remove its contents without touching the package DB.
+cache="$T/var/cache/xbps"
+[[ -d "$cache" && ! -L "$cache" && "$(realpath "$cache")" == "$(realpath "$T")/var/cache/xbps" ]]
+find "$cache" -mindepth 1 -delete
 # Keep the cache directory, but verify no downloaded package archives remain.
-if find "$T/var/cache/xbps" -type f \( -name '*.xbps' -o -name '*.sig2' \) -print -quit | grep -q .; then
+if [[ -n "$(find "$cache" -mindepth 1 -print -quit)" ]]; then
     echo 'XBPS package cache is not empty after cleanup' >&2
     exit 1
 fi
