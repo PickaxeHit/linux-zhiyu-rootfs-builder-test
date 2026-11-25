@@ -147,11 +147,22 @@ camera=("$T"/usr/lib/libcamera.so.*)
 for f in "${camera[@]}"; do ch "$loader" --list "${f#"$T"}"; done
 
 # Keep the XBPS database and trusted keys; discard only caches and host identity.
-ch xbps-remove -O
+echo "--- XBPS cache before cleanup:"
+du -sh "$T/var/cache/xbps"
+ch xbps-remove -OO
+# Keep the cache directory, but verify no downloaded package archives remain.
+if find "$T/var/cache/xbps" -type f \( -name '*.xbps' -o -name '*.sig2' \) -print -quit | grep -q .; then
+    echo 'XBPS package cache is not empty after cleanup' >&2
+    exit 1
+fi
+echo "--- XBPS cache after cleanup:"
+du -sh "$T/var/cache/xbps"
 rm -f "$T"/etc/ssh/ssh_host_* "$T/etc/resolv.conf" "$T/var/lib/dbus/machine-id"
 : > "$T/etc/machine-id"
 touch "$T/etc/resolv.conf"
 cleanup
+echo "--- Rootfs size before compression:"
+du -sh "$T"
 out="void-aarch64-$DESKTOP-rootfs.tar.xz"
 tar --numeric-owner --acls --xattrs -C "$T" -I 'xz -9e -T0' -cpf "$out" .
 sha256sum "$out" > "$out.sha256"
