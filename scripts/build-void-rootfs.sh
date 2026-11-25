@@ -63,8 +63,16 @@ meson setup "$build/obj" "$build/qbootctl-$qboot_rev" --prefix=/usr --buildtype=
 meson compile -C "$build/obj"
 DESTDIR="$build/stage" meson install -C "$build/obj"
 install -d "$T/var/tmp/qbootctl-repo"
-(cd "$T/var/tmp/qbootctl-repo" && xbps-create -A aarch64 -n qbootctl-0.0.20250324_1 \
-    -s 'Qualcomm boot slot controller' -D glibc "$build/stage" && xbps-rindex -a ./*.xbps)
+# xbps-create expects a dependency pattern, not a bare package name.
+# Require at least the glibc version used to link the native executable.
+glibc_pkgver=$(xbps-query -p pkgver glibc)
+[[ "$glibc_pkgver" =~ ^glibc-[0-9][0-9A-Za-z._+~-]*_[0-9]+$ ]]
+glibc_version=${glibc_pkgver#glibc-}
+echo "qbootctl dependency: glibc>=$glibc_version"
+(cd "$T/var/tmp/qbootctl-repo" && xbps-create -A aarch64 -n qbootctl-0.0.20250324_2 \
+    -s 'Qualcomm boot slot controller' -D "glibc>=$glibc_version" "$build/stage" && xbps-rindex -a ./*.xbps)
+# Check the generated dependency before handing it to the target solver.
+ch xbps-query -R --repository=/var/tmp/qbootctl-repo -p run_depends qbootctl | grep -Fx "glibc>=$glibc_version"
 ch xbps-install -y -R /var/tmp/qbootctl-repo qbootctl </dev/null
 rm -rf "$T/var/tmp/qbootctl-repo"
 
