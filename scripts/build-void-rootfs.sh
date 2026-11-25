@@ -15,6 +15,8 @@ esac
 BSP="https://github.com/$PACKAGE_REPOSITORY/releases/download/repo-xbps/"
 OFFICIAL=https://repo-default.voidlinux.org/current/aarch64
 T=$(mktemp -d)
+# mktemp creates mode 0700; the installed root must be traversable by users.
+chmod 0755 "$T"
 build=$(mktemp -d)
 cleanup() {
     for m in run sys proc dev; do
@@ -134,6 +136,12 @@ ch xbps-query -p pkgver "${board[0]}"
 for pkg in "${board[@]}"; do ch xbps-query -p pkgver "$pkg"; done
 if [[ $(readlink "$T/etc/mtab") == /proc/mounts ]]; then ln -sfn /proc/self/mounts "$T/etc/mtab"; fi
 ch xbps-pkgdb -a
+# Check execution and path traversal with the real service/user credentials.
+# A root-only loader check cannot detect EACCES after chpst drops privileges.
+test "$(stat -c '%a:%u:%g' "$T")" = '755:0:0'
+ch chpst -u fastrpc:fastrpc /usr/bin/test -x /usr/bin/hexagonrpcd
+ch chpst -u fastrpc:fastrpc /usr/bin/true
+ch chpst -u "$USERNAME" /usr/bin/true
 loader=/usr/lib/ld-linux-aarch64.so.1
 for f in /usr/bin/qbootctl /usr/bin/zhiyu-sensord /usr/bin/sensh /usr/bin/hexagonrpcd /usr/lib/dri/qcom_drv_video.so; do
     test -f "$T$f"
@@ -166,6 +174,7 @@ rm -f "$T"/etc/ssh/ssh_host_* "$T/etc/resolv.conf" "$T/var/lib/dbus/machine-id"
 : > "$T/etc/machine-id"
 touch "$T/etc/resolv.conf"
 cleanup
+test "$(stat -c '%a:%u:%g' "$T")" = '755:0:0'
 echo "--- Rootfs size before compression:"
 du -sh "$T"
 out="void-aarch64-$DESKTOP-rootfs.tar.xz"
