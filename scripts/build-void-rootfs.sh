@@ -6,6 +6,11 @@ set -euo pipefail
 [[ "$PACKAGE_REPOSITORY" =~ ^[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9_.-]+$ ]] || exit 2
 case "${PACKAGE_REPOSITORY#*/}" in .|..) exit 2;; esac
 case "$LOGIN_SHELL" in bash|zsh) ;; *) exit 2;; esac
+# chpasswd consumes one username:password record per line.
+if [[ -z "$PASSWORD" || "$PASSWORD" == *$'\n'* || "$PASSWORD" == *$'\r'* ]]; then
+    echo 'Initial password must be nonempty and contain no line breaks' >&2
+    exit 2
+fi
 case "$DESKTOP" in
     kde) desktop=(kde-plasma kde-baseapps sddm xorg-minimal xorg-server-xwayland plasma-keyboard); dm=sddm ;;
     gnome) desktop=(gnome-core gnome-console gnome-text-editor gnome-calculator gnome-system-monitor xorg-server-xwayland); dm=gdm ;;
@@ -50,7 +55,8 @@ test -n "$(series "$upstream")"
 test "$(series "$upstream")" = "$(series "$replacement")" || { echo "Camera ABI mismatch: $upstream / $replacement" >&2; exit 1; }
 board=(linux-zhiyu-modules linux-zhiyu-headers linux-zhiyu-firmware linux-zhiyu-images libcamera-zhiyu zhiyu-qrtr sensh hexagonrpc zhiyu-sensord qcom-va-driver qbootctl)
 ch xbps-install -y -R "$BSP" "${board[@]}" </dev/null
-apps=(bash zsh sudo vim NetworkManager bluez dbus elogind polkit rtkit chrony
+# base-system already provides dash and bash; install zsh only when selected.
+apps=("$LOGIN_SHELL" sudo vim NetworkManager bluez dbus elogind polkit rtkit chrony
       pipewire wireplumber wireplumber-elogind alsa-pipewire libspa-bluetooth
       alsa-utils alsa-ucm-conf mesa-freedreno-dri mesa-vulkan-freedreno mesa-opencl
       vulkan-loader libva-utils noto-fonts-ttf noto-fonts-cjk noto-fonts-emoji)
@@ -66,7 +72,12 @@ groups=(wheel audio video input)
 if ch getent group render >/dev/null; then groups+=(render); fi
 for group in "${groups[@]}"; do ch getent group "$group" >/dev/null; done
 group_list=$(IFS=,; echo "${groups[*]}")
-ch useradd -m -G "$group_list" -s "/usr/bin/$LOGIN_SHELL" "$USERNAME"
+login_shell="/usr/bin/$LOGIN_SHELL"
+if ! ch test -x "$login_shell" || ! grep -Fxq "$login_shell" "$T/etc/shells"; then
+    echo "Selected login shell is missing or not registered: $login_shell" >&2
+    exit 1
+fi
+ch useradd -m -G "$group_list" -s "$login_shell" "$USERNAME"
 # Void's chpasswd PAM stack uses pam_permit; select the hash explicitly.
 printf '%s:%s\n' "$USERNAME" "$PASSWORD" | ch chpasswd -c SHA512
 ch passwd -l root
