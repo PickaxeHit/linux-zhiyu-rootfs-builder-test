@@ -73,7 +73,7 @@ jobs:
             --entrypoint /bin/sh ghcr.io/void-linux/void-glibc-full:latest -ec '
               xbps-install -Suy xbps
               xbps-install -Suy
-              xbps-install -y bash curl ca-certificates meson ninja gcc glibc-devel linux-headers pkgconf xz tar util-linux
+              xbps-install -y bash ca-certificates xz tar util-linux
               exec bash scripts/build-void-rootfs.sh
             '
       - uses: actions/upload-artifact@v4

@@ -17,13 +17,12 @@ OFFICIAL=https://repo-default.voidlinux.org/current/aarch64
 T=$(mktemp -d)
 # mktemp creates mode 0700; the installed root must be traversable by users.
 chmod 0755 "$T"
-build=$(mktemp -d)
 cleanup() {
     for m in run sys proc dev; do
         if mountpoint -q "$T/$m"; then umount -R "$T/$m"; fi
     done
 }
-trap 'cleanup; rm -rf "$T" "$build"' EXIT
+trap 'cleanup; rm -rf "$T"' EXIT
 ch() { chroot "$T" /usr/bin/env HOME=/root PATH=/usr/bin:/bin LANG=C "$@"; }
 
 # Bootstrap a real base-system, not the OCI filesystem.
@@ -49,34 +48,13 @@ replacement=$(ch xbps-query -R -p pkgver libcamera-zhiyu)
 series() { sed -nE 's/^[^-]+(-zhiyu)?-([0-9]+\.[0-9]+).*/\2/p' <<< "$1"; }
 test -n "$(series "$upstream")"
 test "$(series "$upstream")" = "$(series "$replacement")" || { echo "Camera ABI mismatch: $upstream / $replacement" >&2; exit 1; }
-board=(linux-zhiyu-modules linux-zhiyu-headers linux-zhiyu-firmware linux-zhiyu-images libcamera-zhiyu zhiyu-qrtr sensh hexagonrpc zhiyu-sensord qcom-va-driver)
+board=(linux-zhiyu-modules linux-zhiyu-headers linux-zhiyu-firmware linux-zhiyu-images libcamera-zhiyu zhiyu-qrtr sensh hexagonrpc zhiyu-sensord qcom-va-driver qbootctl)
 ch xbps-install -y -R "$BSP" "${board[@]}" </dev/null
 apps=(bash zsh sudo vim NetworkManager bluez dbus elogind polkit rtkit chrony
       pipewire wireplumber wireplumber-elogind alsa-pipewire libspa-bluetooth
       alsa-utils alsa-ucm-conf mesa-freedreno-dri mesa-vulkan-freedreno mesa-opencl
       vulkan-loader libva-utils noto-fonts-ttf noto-fonts-cjk noto-fonts-emoji)
 ch xbps-install -y -R "$BSP" "${apps[@]}" "${desktop[@]}" </dev/null
-
-# qbootctl is not packaged by Void or the current BSP. Build a small local XBPS.
-qboot_rev=39a6e6daaf029fb0a083777679a15ea2c18f72de
-curl -fsSL --retry 3 "https://github.com/linux-msm/qbootctl/archive/$qboot_rev.tar.gz" -o "$build/qbootctl.tar.gz"
-tar -xf "$build/qbootctl.tar.gz" -C "$build"
-meson setup "$build/obj" "$build/qbootctl-$qboot_rev" --prefix=/usr --buildtype=release
-meson compile -C "$build/obj"
-DESTDIR="$build/stage" meson install -C "$build/obj"
-install -d "$T/var/tmp/qbootctl-repo"
-# xbps-create expects a dependency pattern, not a bare package name.
-# Require at least the glibc version used to link the native executable.
-glibc_pkgver=$(xbps-query -p pkgver glibc)
-[[ "$glibc_pkgver" =~ ^glibc-[0-9][0-9A-Za-z._+~-]*_[0-9]+$ ]]
-glibc_version=${glibc_pkgver#glibc-}
-echo "qbootctl dependency: glibc>=$glibc_version"
-(cd "$T/var/tmp/qbootctl-repo" && xbps-create -A aarch64 -n qbootctl-0.0.20250324_2 \
-    -s 'Qualcomm boot slot controller' -D "glibc>=$glibc_version" "$build/stage" && xbps-rindex -a ./*.xbps)
-# Check the generated dependency before handing it to the target solver.
-ch xbps-query -R --repository=/var/tmp/qbootctl-repo -p run_depends qbootctl | grep -Fx "glibc>=$glibc_version"
-ch xbps-install -y -R /var/tmp/qbootctl-repo qbootctl </dev/null
-rm -rf "$T/var/tmp/qbootctl-repo"
 
 printf '%s\n' "$HOST_NAME" > "$T/etc/hostname"
 printf '127.0.0.1 localhost %s\n::1 localhost\n' "$HOST_NAME" > "$T/etc/hosts"
@@ -89,7 +67,8 @@ if ch getent group render >/dev/null; then groups+=(render); fi
 for group in "${groups[@]}"; do ch getent group "$group" >/dev/null; done
 group_list=$(IFS=,; echo "${groups[*]}")
 ch useradd -m -G "$group_list" -s "/usr/bin/$LOGIN_SHELL" "$USERNAME"
-printf '%s:%s\n' "$USERNAME" "$PASSWORD" | ch chpasswd
+# Void's chpasswd PAM stack uses pam_permit; select the hash explicitly.
+printf '%s:%s\n' "$USERNAME" "$PASSWORD" | ch chpasswd -c SHA512
 ch passwd -l root
 install -d "$T/etc/sudoers.d"
 printf '%%wheel ALL=(ALL:ALL) ALL\n' > "$T/etc/sudoers.d/10-wheel"
@@ -157,13 +136,12 @@ for f in "${camera[@]}"; do ch "$loader" --list "${f#"$T"}"; done
 # Keep the XBPS database and trusted keys; discard only caches and host identity.
 echo "--- XBPS cache before cleanup:"
 du -sh "$T/var/cache/xbps"
-ch xbps-remove -OO
-# XBPS may leave detached signatures or other files behind. The target
-# cache is disposable; remove its contents without touching the package DB.
+# -OO retains cached packages that are still installed. The target cache
+# is disposable; remove its contents without touching the package DB.
 cache="$T/var/cache/xbps"
 [[ -d "$cache" && ! -L "$cache" && "$(realpath "$cache")" == "$(realpath "$T")/var/cache/xbps" ]]
 find "$cache" -mindepth 1 -delete
-# Keep the cache directory, but verify no downloaded package archives remain.
+# Keep the cache directory, but verify its contents are empty.
 if [[ -n "$(find "$cache" -mindepth 1 -print -quit)" ]]; then
     echo 'XBPS package cache is not empty after cleanup' >&2
     exit 1
@@ -175,6 +153,16 @@ rm -f "$T"/etc/ssh/ssh_host_* "$T/etc/resolv.conf" "$T/var/lib/dbus/machine-id"
 touch "$T/etc/resolv.conf"
 cleanup
 test "$(stat -c '%a:%u:%g' "$T")" = '755:0:0'
+# Never publish a rootfs with a missing or locked initial user password.
+# Verify the SHA-512 crypt format without printing the hash or password.
+if ! awk -F: -v user="$USERNAME" '
+    $1 == user && $2 ~ /^\$6\$(rounds=[0-9]+\$)?[^$]+\$[^$]+$/ { ok=1 }
+    END { exit !ok }
+' "$T/etc/shadow"; then
+    echo "Initial password hash is missing, locked or invalid for $USERNAME" >&2
+    exit 1
+fi
+echo "Initial user password hash verified."
 echo "--- Rootfs size before compression:"
 du -sh "$T"
 out="void-aarch64-$DESKTOP-rootfs.tar.xz"
