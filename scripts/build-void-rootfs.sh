@@ -79,11 +79,6 @@ ch xbps-reconfigure -a
 ch xbps-alternatives -s dash
 test "$(ch readlink -f /bin/sh)" = "$(ch readlink -f /usr/bin/dash)"
 
-# NetworkManager owns DHCP and writes a regular resolv.conf directly.
-# Avoid an auto-selected openresolv backend and never ship the CI resolver.
-install -d -m755 "$T/etc/NetworkManager/conf.d"
-printf '[main]\ndns=default\nrc-manager=file\n' > "$T/etc/NetworkManager/conf.d/10-zhiyu-dns.conf"
-
 printf '%s\n' "$HOST_NAME" > "$T/etc/hostname"
 printf '127.0.0.1 localhost %s\n::1 localhost\n' "$HOST_NAME" > "$T/etc/hosts"
 printf 'CHASSIS=tablet\n' > "$T/etc/machine-info"
@@ -172,9 +167,9 @@ for f in "${camera[@]}"; do ch "$loader" --list "${f#"$T"}"; done
 # Keep the XBPS database and trusted keys, but detach the external cache.
 echo "--- External XBPS cache:"
 du -sh "$build_cache"
+# Leave resolver creation to the default Void network stack on first connection.
 rm -f "$T"/etc/ssh/ssh_host_* "$T/etc/resolv.conf" "$T/var/lib/dbus/machine-id" "$T/etc/.pwd.lock"
 : > "$T/etc/machine-id"
-install -m644 /dev/null "$T/etc/resolv.conf"
 cleanup
 # The runtime mounts and external package cache must not enter the archive.
 cache="$T/var/cache/xbps"
