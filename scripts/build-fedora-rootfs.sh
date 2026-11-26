@@ -102,13 +102,9 @@ printf '%s\n' "$HOST_NAME" > "$target/etc/hostname"
 printf 'CHASSIS=tablet\n' > "$target/etc/machine-info"
 printf 'LANG=en_US.UTF-8\n' > "$target/etc/locale.conf"
 printf '127.0.0.1 localhost %s\n::1 localhost\n' "$HOST_NAME" > "$target/etc/hosts"
-# video/render/input are what /dev/dma_heap, /dev/video*, /dev/dri/renderD*
-# and /dev/input/event* need; Fedora's uaccess ACLs normally cover them, but
-# they only apply to a local seat session, so a logged-in user that is not on
-# the seat (or boots without logind tagging the node) would lose the camera.
-# audio is deliberately absent: systemd tags /dev/snd/* with uaccess and
-# PipeWire runs as the user, so the group adds nothing.
-ch useradd -m -G wheel,video,render,input "$USERNAME"
+# Keep video/render for camera and GPU access outside a local seat (e.g. SSH).
+# logind grants input and audio access to the active local session.
+ch useradd -m -G wheel,video,render "$USERNAME"
 printf '%s:%s\n' "$USERNAME" "$PASSWORD" | ch chpasswd
 ch passwd -l root
 ch systemctl --root=/ disable qbootctl.service

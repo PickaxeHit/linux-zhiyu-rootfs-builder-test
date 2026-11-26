@@ -54,6 +54,7 @@ in
         "wheel"
         "networkmanager"
         "video"
+        "render"
       ];
       initialHashedPassword = "!";
     };

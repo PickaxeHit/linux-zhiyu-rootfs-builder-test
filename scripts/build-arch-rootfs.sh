@@ -328,7 +328,8 @@ echo "$HOST_NAME" | sudo tee "$T/etc/hostname" >/dev/null
 printf 'CHASSIS=tablet\n' | sudo tee "$T/etc/machine-info" >/dev/null
 
 # users
-c useradd -m -G wheel,video,render,input -s "/usr/bin/$LOGIN_SHELL" "$USERNAME"
+# Keep video/render for headless hardware access; logind grants input access.
+c useradd -m -G wheel,video,render -s "/usr/bin/$LOGIN_SHELL" "$USERNAME"
 printf '%s:%s\n' "$USERNAME" "$PASSWORD" | c chpasswd
 c passwd -l root
 echo '%wheel ALL=(ALL:ALL) ALL' | sudo tee "$T/etc/sudoers.d/10-wheel" >/dev/null

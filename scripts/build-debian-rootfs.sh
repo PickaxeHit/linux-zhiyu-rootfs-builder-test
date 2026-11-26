@@ -144,7 +144,8 @@ printf 'CHASSIS=tablet\n' | sudo tee "$T/etc/machine-info" >/dev/null
 printf '127.0.0.1\tlocalhost\n127.0.1.1\t%s\n' "$HOST_NAME" | sudo tee "$T/etc/hosts" >/dev/null
 sudo ln -sf /usr/share/zoneinfo/Asia/Shanghai "$T/etc/localtime"
 
-ch useradd -m -G sudo,audio,video,input,render -s /bin/bash "$USERNAME"
+# Keep video/render for headless hardware access; logind grants input/audio access.
+ch useradd -m -G sudo,video,render -s /bin/bash "$USERNAME"
 printf '%s:%s\n' "$USERNAME" "$PASSWORD" | ch chpasswd
 echo '%sudo ALL=(ALL:ALL) ALL' | sudo tee "$T/etc/sudoers.d/10-sudo" >/dev/null
 sudo chmod 440 "$T/etc/sudoers.d/10-sudo"
